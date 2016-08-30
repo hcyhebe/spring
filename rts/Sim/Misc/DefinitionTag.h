@@ -6,7 +6,7 @@
 #define DEFINTION_TAG_H
 
 #include <assert.h>
-#include <boost/utility.hpp>
+#include <boost/noncopyable.hpp>
 #include <boost/static_assert.hpp>
 #include <map>
 #include <vector>
@@ -35,7 +35,7 @@ namespace {
 }
 
 // must be included after "std::ostream& operator<<" definitions for LLVM/Clang compilation
-#include "System/Util.h"
+#include "System/StringConvertibleOptionalValue.h"
 
 
 /**

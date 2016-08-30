@@ -15,7 +15,6 @@
 #include "Map/MapParser.h"
 #include "Map/ReadMap.h"
 #include "Map/SMF/SMFMapFile.h"
-#include "Rendering/Textures/Bitmap.h"
 #include "Sim/Misc/SideParser.h"
 #include "ExternalAI/Interface/aidefines.h"
 #include "ExternalAI/Interface/SSkirmishAILibrary.h"
@@ -415,6 +414,7 @@ EXPORT(void) UnInit()
 		_Cleanup();
 		FileSystemInitializer::Cleanup();
 		ConfigHandler::Deallocate();
+		DataDirLocater::FreeInstance();
 	}
 	UNITSYNC_CATCH_BLOCKS;
 }
@@ -517,7 +517,7 @@ EXPORT(void) AddArchive(const char* archiveName)
 		CheckNullOrEmpty(archiveName);
 
 		LOG_L(L_DEBUG, "adding archive: %s", archiveName);
-		vfsHandler->AddArchive(archiveName, false);
+		vfsHandler->AddArchive(archiveScanner->NameFromArchive(archiveName), false);
 	}
 	UNITSYNC_CATCH_BLOCKS;
 }
@@ -2683,7 +2683,7 @@ EXPORT(const char*) GetInfoValue(int infoIndex) {
 
 	try {
 		const InfoItem* infoItem = GetInfoItem(infoIndex);
-		value = GetStr(info_getValueAsString(infoItem));
+		value = GetStr(infoItem->GetValueAsString());
 	}
 	UNITSYNC_CATCH_BLOCKS;
 

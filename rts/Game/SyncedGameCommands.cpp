@@ -20,6 +20,7 @@
 #include "Sim/Misc/GlobalSynced.h"
 #include "Sim/Misc/LosHandler.h"
 #include "Sim/Misc/TeamHandler.h"
+#include "Sim/Misc/ModInfo.h"
 #include "Sim/Projectiles/ExplosionGenerator.h"
 #include "Sim/Units/UnitDefHandler.h"
 #include "Sim/Units/UnitHandler.h"
@@ -149,8 +150,10 @@ public:
 			" map, instantly; by default to your own team", true) {}
 
 	bool Execute(const SyncedAction& action) const {
-		const std::vector<std::string>& parsedArgs = CSimpleParser::Tokenize(action.GetArgs(), 0);
-		unitLoader->ParseAndExecuteGiveUnitsCommand(parsedArgs, playerHandler->Player(action.GetPlayerID())->team);
+		// not for autohosts
+		if (!playerHandler->IsValidPlayer(action.GetPlayerID()))
+			return false;
+		unitLoader->ParseAndExecuteGiveUnitsCommand(CSimpleParser::Tokenize(action.GetArgs(), 0), playerHandler->Player(action.GetPlayerID())->team);
 		return true;
 	}
 };
@@ -255,58 +258,74 @@ public:
 };
 
 
+
+template<class LuaSyncedHandler> static void ExecuteSyncedLuaAction(
+	CLuaHandleSynced* handler,
+	const SyncedAction& action,
+	const char* luaName
+) {
+	const std::string& cmd = action.GetCmd();
+	const std::string& arg = action.GetArgs();
+
+	const char* msgs[] = {
+		"synced %s scripts require cheating to %s",
+		"cannot execute /%s %s before first gameframe",
+	};
+
+	if (arg == "reload" || arg == "enable") {
+		if (!gs->cheatEnabled || gs->PreSimFrame()) {
+			LOG_L(L_WARNING, msgs[gs->cheatEnabled], cmd.c_str(), arg.c_str());
+		} else {
+			if (handler != nullptr && arg == "enable") {
+				LOG_L(L_WARNING, "%s is already loaded", luaName);
+			} else {
+				LuaSyncedHandler::ReloadHandler();
+
+				if (handler != nullptr) {
+					LOG("%s loaded", luaName);
+				} else {
+					LOG_L(L_ERROR, "%s loading failed", luaName);
+				}
+			}
+		}
+
+		return;
+	}
+
+	if (arg == "disable") {
+		if (!gs->cheatEnabled || gs->PreSimFrame()) {
+			LOG_L(L_WARNING, msgs[gs->cheatEnabled], cmd.c_str(), arg.c_str());
+		} else {
+			LuaSyncedHandler::FreeHandler();
+
+			LOG("%s disabled", luaName);
+		}
+
+		return;
+	}
+
+	if (handler != nullptr) {
+		handler->GotChatMsg(arg, action.GetPlayerID());
+	} else {
+		LOG("%s is not loaded", luaName);
+	}
+}
+
 class LuaRulesActionExecutor : public ISyncedActionExecutor {
 public:
 	LuaRulesActionExecutor() : ISyncedActionExecutor("LuaRules",
-			"Allows one to reload or disable Lua-rules, or alternatively to send"
-			" a chat message to Lua-rules") {}
+		"Allows reloading or disabling LuaRules, and"
+		" to send a chat message to LuaRules scripts"
+	) {}
 
 	bool Execute(const SyncedAction& action) const {
-		const std::string& arg = action.GetArgs();
-
-		if (gs->frameNum <= 1) {
-			// TODO still needed???
-			LOG_L(L_WARNING, "/%s %s: cannot execute before gameframe #2", GetCommand().c_str(), arg.c_str());
-			return false;
-		}
-
 		// NOTE:
-		//     previously only the host player (ID == 0) was allowed to issue these actions
-		//     prior to some server changes they worked even in demos with that restriction,
-		//     but this is no longer the case so we now let any player execute them (for MP
-		//     it does not matter who does so since they are not meant to be used there ITFP
-		//     and no less sync-safe)
-		if (arg == "reload" || arg == "enable") {
-			if (!gs->cheatEnabled) {
-				LOG_L(L_WARNING, "Cheating required to load synced scripts");
-			} else {
-				if (luaRules != NULL && arg == "enable") {
-					LOG_L(L_WARNING, "LuaRules is already loaded");
-				} else {
-					CLuaRules::FreeHandler();
-					CLuaRules::LoadHandler();
-
-					if (luaRules) {
-						LOG("LuaRules loaded");
-					} else {
-						LOG_L(L_ERROR, "LuaRules loading failed");
-					}
-				}
-			}
-		} else if (arg == "disable") {
-			if (!gs->cheatEnabled) {
-				LOG_L(L_WARNING, "Cheating required to disable synced scripts");
-			} else {
-				CLuaRules::FreeHandler();
-
-				LOG("LuaRules disabled");
-			}
-		} else if (luaRules) {
-			luaRules->GotChatMsg(arg, action.GetPlayerID());
-		} else {
-			LOG("LuaRules is not loaded");
-		}
-
+		//   previously only the host player (ID == 0) was allowed to issue these actions
+		//   prior to some server changes they worked even in demos with that restriction,
+		//   but this is no longer the case so we now let any player execute them (for MP
+		//   it does not matter who does so since they are not meant to be used there ITFP
+		//   and no less sync-safe)
+		ExecuteSyncedLuaAction<CLuaRules>(luaRules, action, "LuaRules");
 		return true;
 	}
 };
@@ -315,52 +334,15 @@ public:
 class LuaGaiaActionExecutor : public ISyncedActionExecutor {
 public:
 	LuaGaiaActionExecutor() : ISyncedActionExecutor("LuaGaia",
-			"Allows one to reload or disable Lua-Gaia, or alternatively to send"
-			" a chat message to Lua-Gaia") {}
+		"Allows reloading or disabling LuaGaia, and"
+		" to send a chat message to LuaGaia scripts"
+	) {}
 
 	bool Execute(const SyncedAction& action) const {
-		const std::string& arg = action.GetArgs();
-
-		if (gs->frameNum <= 1) {
-			// TODO still needed???
-			LOG_L(L_WARNING, "/%s %s: cannot execute before gameframe #2", GetCommand().c_str(), arg.c_str());
+		if (!gs->useLuaGaia)
 			return false;
-		}
 
-		if (!gs->useLuaGaia) {
-			return false;
-		}
-
-		if (arg == "reload" || arg == "enable") {
-			if (!gs->cheatEnabled) {
-				LOG_L(L_WARNING, "Cheating required to load synced scripts");
-			} else {
-				if (luaGaia != NULL && arg == "enable") {
-					LOG_L(L_WARNING, "LuaGaia is already loaded");
-				} else {
-					CLuaGaia::FreeHandler();
-					CLuaGaia::LoadHandler();
-
-					if (luaGaia) {
-						LOG("LuaGaia loaded");
-					} else {
-						LOG_L(L_ERROR, "LuaGaia loading failed");
-					}
-				}
-			}
-		} else if (arg == "disable") {
-			if (!gs->cheatEnabled) {
-				LOG_L(L_WARNING, "Cheating required to disable synced scripts");
-			} else {
-				CLuaGaia::FreeHandler();
-				LOG("LuaGaia disabled");
-			}
-		} else if (luaGaia) {
-			luaGaia->GotChatMsg(arg, action.GetPlayerID());
-		} else {
-			LOG("LuaGaia is not loaded");
-		}
-
+		ExecuteSyncedLuaAction<CLuaGaia>(luaGaia, action, "LuaGaia");
 		return true;
 	}
 };
@@ -509,7 +491,9 @@ void SyncedGameCommands::AddDefaultActionExecutors() {
 	AddActionExecutor(new DesyncActionExecutor());
 #endif // defined DEBUG
 	AddActionExecutor(new AtmActionExecutor());
-	AddActionExecutor(new TakeActionExecutor());
+	if (modInfo.allowTake) {
+		AddActionExecutor(new TakeActionExecutor());
+	}
 	AddActionExecutor(new SkipActionExecutor());
 }
 

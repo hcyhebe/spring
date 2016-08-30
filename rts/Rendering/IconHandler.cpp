@@ -1,16 +1,16 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
+#include "IconHandler.h"
+
 #include <algorithm>
 #include <assert.h>
 #include <locale>
 #include <cctype>
-#include <vector>
-#include <string>
+#include <cmath>
 
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/VertexArray.h"
 #include "System/Log/ILog.h"
-#include "IconHandler.h"
 #include "Lua/LuaParser.h"
 #include "Textures/Bitmap.h"
 #include "System/Exceptions.h"
@@ -91,7 +91,7 @@ bool CIconHandler::AddIcon(const string& iconName, const string& textureName,
 	try {
 		CBitmap bitmap;
 		if (!textureName.empty() && bitmap.Load(textureName)) {
-			texID = bitmap.CreateTexture(true);
+			texID = bitmap.CreateMipMapTexture();
 			
 			glBindTexture(GL_TEXTURE_2D, texID);
 			const GLenum wrapMode = GLEW_EXT_texture_edge_clamp ?
@@ -174,7 +174,7 @@ unsigned int CIconHandler::GetDefaultTexture()
 			const int index = ((y * 128) + x) * 4;
 			const int dx = (x - 64);
 			const int dy = (y - 64);
-			const float r = math::sqrt((dx * dx) + (dy * dy)) / 64.0f;
+			const float r = std::sqrt((dx * dx) + (dy * dy)) / 64.0f;
 			if (r > 1.0f) {
 				si[index + 0] = 0;
 				si[index + 1] = 0;
@@ -191,7 +191,7 @@ unsigned int CIconHandler::GetDefaultTexture()
 	}
 
 	CBitmap bitmap(si, 128, 128);
-	defTexID = bitmap.CreateTexture(false);
+	defTexID = bitmap.CreateTexture();
 
 	glBindTexture(GL_TEXTURE_2D, defTexID);
 
@@ -248,6 +248,7 @@ CIcon& CIcon::operator=(const CIcon& icon)
 CIcon::~CIcon()
 {
 	data->UnRef();
+	data = nullptr;
 }
 
 
@@ -289,6 +290,7 @@ CIconData::~CIconData()
 {
 	if (ownTexture) {
 		glDeleteTextures(1, &texID);
+		texID = 0;
 	}
 }
 
@@ -300,8 +302,7 @@ void CIconData::Ref()
 
 void CIconData::UnRef()
 {
-	refCount--;
-	if (refCount <= 0) {
+	if ((--refCount) <= 0) {
 		delete this;
 	}
 }

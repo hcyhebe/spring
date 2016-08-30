@@ -11,14 +11,16 @@ CR_BIND_DERIVED(CStarburstLauncher, CWeapon, (NULL, NULL))
 
 CR_REG_METADATA(CStarburstLauncher, (
 	CR_MEMBER(uptime),
-	CR_MEMBER(tracking),
-	CR_RESERVED(8)
+	CR_MEMBER(tracking)
 ))
 
 CStarburstLauncher::CStarburstLauncher(CUnit* owner, const WeaponDef* def): CWeapon(owner, def)
 {
-	tracking = ((def->tracks)? weaponDef->turnrate: 0);
-	uptime = (def->uptime * GAME_SPEED);
+	//happens when loading
+	if (def != nullptr) {
+		tracking = weaponDef->turnrate * def->tracks;
+		uptime = (def->uptime * GAME_SPEED);
+	}
 }
 
 
@@ -39,7 +41,7 @@ void CStarburstLauncher::FireImpl(const bool scriptCall)
 	WeaponProjectileFactory::LoadProjectile(params);
 }
 
-bool CStarburstLauncher::HaveFreeLineOfFire(const float3 pos, const SWeaponTarget& trg) const
+bool CStarburstLauncher::HaveFreeLineOfFire(const float3 pos, const SWeaponTarget& trg, bool useMuzzle) const
 {
 	const float3& wdir = weaponDef->fixedLauncher? weaponDir: UpVector;
 

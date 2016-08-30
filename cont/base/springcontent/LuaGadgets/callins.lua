@@ -28,7 +28,8 @@ CALLIN_LIST = {
 	"GameStart",
 	"GameOver",
 	"GameFrame",
-	"GameProgress",            -- FIXME: not implemented by base GH
+	"GamePaused",
+	"GameProgress",
 	"GameID",
 
 	-- player callins
@@ -44,7 +45,9 @@ CALLIN_LIST = {
 	"UnitCreated",
 	"UnitFinished",
 	"UnitFromFactory",
+	"UnitReverseBuilt",
 	"UnitDestroyed",
+	"RenderUnitDestroyed",
 	"UnitExperience",
 	"UnitIdle",
 	"UnitCmdDone",
@@ -70,7 +73,7 @@ CALLIN_LIST = {
 	"UnitLeftAir",             -- FIXME: not implemented by base GH
 	"UnitEnteredWater",        -- FIXME: not implemented by base GH
 	"UnitLeftWater",           -- FIXME: not implemented by base GH
-	"UnitCommand",             -- FIXME: not implemented by base GH
+	"UnitCommand",
 
 	-- weapon callins
 	"StockpileChanged",
@@ -124,6 +127,11 @@ CALLIN_LIST = {
 	"DrawWorldShadow",
 	"DrawWorldReflection",
 	"DrawWorldRefraction",
+	"DrawGroundPreForward",
+	"DrawGroundPreDeferred",
+	"DrawGroundPostDeferred",
+	"DrawUnitsPostDeferred",
+	"DrawFeaturesPostDeferred",
 	"DrawScreenEffects",
 	"DrawScreen",
 	"DrawInMiniMap",
@@ -162,6 +170,12 @@ CALLIN_LIST = {
 	"WorldTooltip",            -- FIXME: not implemented by base GH
 	"MapDrawCmd",
 	"ShockFront",              -- FIXME: not implemented by base GH
+
+	"DownloadQueued",
+	"DownloadStarted",
+	"DownloadFinished",
+	"DownloadFailed",
+	"DownloadProgress",
 }
 
 for callinIdx, callinName in ipairs(CALLIN_LIST) do

@@ -55,17 +55,22 @@ AAirMoveType::AAirMoveType(CUnit* unit):
 	useSmoothMesh(false),
 	autoLand(true),
 
-	lastColWarning(NULL),
+	lastColWarning(nullptr),
 
 	lastColWarningType(0)
 {
-	assert(unit != NULL);
+	// creg
+	if (unit == nullptr)
+		return;
+
+	assert(owner->unitDef != nullptr);
 
 	oldGoalPos = unit->pos;
 	// same as {Ground, HoverAir}MoveType::accRate
 	accRate = std::max(0.01f, unit->unitDef->maxAcc);
 	decRate = std::max(0.01f, unit->unitDef->maxDec);
 	altitudeRate = std::max(0.01f, unit->unitDef->verticalSpeed);
+	landRadiusSq = Square(BrakingDistance(maxSpeed, decRate));
 
 	useHeading = false;
 }
@@ -138,13 +143,15 @@ void AAirMoveType::UpdateLanded()
 	owner->UpdateMidAndAimPos();
 }
 
-void AAirMoveType::LandAt(float3 pos, float distance)
+void AAirMoveType::LandAt(float3 pos, float distanceSq)
 {
-	if (aircraftState != AIRCRAFT_LANDING) {
+	if (distanceSq < 0.0f)
+		distanceSq = Square(BrakingDistance(maxSpeed, decRate));
+
+	if (aircraftState != AIRCRAFT_LANDING)
 		SetState(AIRCRAFT_LANDING);
-	}
-	const float landRadius = std::max(distance, std::max(owner->radius, 10.0f));
-	landRadiusSq = landRadius * landRadius;
+
+	landRadiusSq = std::max(distanceSq, Square(std::max(owner->radius, 10.0f)));
 	reservedLandingPos = pos;
 	const float3 originalPos = owner->pos;
 	owner->Move(reservedLandingPos, false);
@@ -160,6 +167,41 @@ void AAirMoveType::UpdateLandingHeight()
 {
 	const float gh = CGround::GetHeightReal(reservedLandingPos.x, reservedLandingPos.z);
 	reservedLandingPos.y = wantedHeight + (owner->unitDef->canSubmerge ? gh : std::max(0.0f, gh));
+}
+
+
+void AAirMoveType::UpdateLanding()
+{
+	const float3& pos = owner->pos;
+
+	const float radius = std::max(owner->radius, 10.0f);
+	const float radiusSq = radius * radius;
+	const float distSq = reservedLandingPos.SqDistance(pos);
+
+
+	const float localAltitude = pos.y - (owner->unitDef->canSubmerge ?
+		CGround::GetHeightReal(owner->pos.x, owner->pos.z):
+		CGround::GetHeightAboveWater(owner->pos.x, owner->pos.z));
+
+	if (distSq <= radiusSq || (distSq < landRadiusSq && localAltitude < wantedHeight + radius)) {
+		SetState(AIRCRAFT_LANDED);
+		owner->SetVelocityAndSpeed(UpVector * owner->speed);
+	}
+}
+
+void AAirMoveType::SetWantedAltitude(float altitude)
+{
+	if (altitude == 0.0f) {
+		wantedHeight = orgWantedHeight;
+	} else {
+		wantedHeight = altitude;
+	}
+}
+
+void AAirMoveType::SetDefaultAltitude(float altitude)
+{
+	wantedHeight = altitude;
+	orgWantedHeight = altitude;
 }
 
 

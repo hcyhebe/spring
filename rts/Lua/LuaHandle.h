@@ -26,6 +26,7 @@ using std::set;
 #define LUA_HANDLE_ORDER_GAIA_UNSYNCED   1300
 #define LUA_HANDLE_ORDER_UI              2000
 #define LUA_HANDLE_ORDER_INTRO           3000
+#define LUA_HANDLE_ORDER_MENU            4000
 
 
 class CUnit;
@@ -52,41 +53,39 @@ class CLuaHandle : public CEventClient
 		void ResetCallinErrors() { callinErrors = 0; }
 
 	public:
-	#define PERMISSIONS_FUNCS(Name, type, dataArg) \
+	#define PERMISSIONS_FUNCS(Name, type, dataArg, OVERRIDE) \
 		void Set ## Name(type _ ## dataArg) { GetLuaContextData(L)->dataArg = _ ## dataArg; } \
-		type Get ## Name() const { return GetLuaContextData(L)->dataArg; } \
+		type Get ## Name() const OVERRIDE { return GetLuaContextData(L)->dataArg; } \
 		static void SetHandle ## Name(const lua_State* L, type _ ## dataArg) { GetLuaContextData(L)->dataArg = _ ## dataArg;; } \
 		static type GetHandle ## Name(const lua_State* L) { return GetLuaContextData(L)->dataArg; }
 
-		PERMISSIONS_FUNCS(FullRead,     bool, fullRead); // virtual function in CEventClient
-		PERMISSIONS_FUNCS(FullCtrl,     bool, fullCtrl);
-		PERMISSIONS_FUNCS(CtrlTeam,     int,  ctrlTeam);
-		PERMISSIONS_FUNCS(ReadTeam,     int,  readTeam);
-		PERMISSIONS_FUNCS(ReadAllyTeam, int,  readAllyTeam); // virtual function in CEventClient
-		PERMISSIONS_FUNCS(SelectTeam,   int,  selectTeam);
+		PERMISSIONS_FUNCS(FullRead,     bool, fullRead, override); // virtual function in CEventClient
+		PERMISSIONS_FUNCS(FullCtrl,     bool, fullCtrl, );
+		PERMISSIONS_FUNCS(CtrlTeam,     int,  ctrlTeam, );
+		PERMISSIONS_FUNCS(ReadTeam,     int,  readTeam, );
+		PERMISSIONS_FUNCS(ReadAllyTeam, int,  readAllyTeam, override); // virtual function in CEventClient
+		PERMISSIONS_FUNCS(SelectTeam,   int,  selectTeam, );
 
 	#undef PERMISSIONS_FUNCS
 
 		static bool GetHandleSynced(const lua_State* L) { return GetLuaContextData(L)->synced; }
 
 		bool GetUserMode() const { return userMode; }
-		static bool GetHandleUserMode(const lua_State* L) { return GetLuaContextData(L)->owner->GetUserMode(); }
 
-		bool CheckModUICtrl() const { return GetModUICtrl() || GetUserMode(); }
-		static bool CheckModUICtrl(lua_State* L) { return GetModUICtrl() || GetHandleUserMode(L); }
+		static bool GetHandleUserMode(lua_State* L) { return (GetHandle(L))->GetUserMode(); }
 
 		static int GetHandleAllowChanges(const lua_State* L) { return GetLuaContextData(L)->allowChanges; }
 
-		static CLuaHandle* GetHandle(lua_State* L) { return GetLuaContextData(L)->owner; }
+		static CLuaHandle* GetHandle(lua_State* L) { return (GetLuaContextData(L)->owner); }
 
 		static void SetHandleRunning(lua_State* L, const bool _running) {
 			GetLuaContextData(L)->running += (_running) ? +1 : -1;
-			assert( GetLuaContextData(L)->running >= 0);
+			assert(GetLuaContextData(L)->running >= 0);
 		}
 		static bool IsHandleRunning(lua_State* L) { return (GetLuaContextData(L)->running > 0); }
-		bool IsRunning() const { return IsHandleRunning(L); }
 
-		bool IsValid() const { return (L != NULL); }
+		bool IsRunning() const { return IsHandleRunning(L); }
+		bool IsValid() const { return (L != nullptr); }
 
 		//FIXME needed by LuaSyncedTable (can be solved cleaner?)
 		lua_State* GetLuaState() const { return L; }
@@ -120,7 +119,7 @@ class CLuaHandle : public CEventClient
 		void UnitCreated(const CUnit* unit, const CUnit* builder) override;
 		void UnitFinished(const CUnit* unit) override;
 		void UnitFromFactory(const CUnit* unit, const CUnit* factory, bool userOrders) override;
-		void UnitNanoframed(const CUnit* unit) override;
+		void UnitReverseBuilt(const CUnit* unit) override;
 		void UnitDestroyed(const CUnit* unit, const CUnit* attacker) override;
 		void UnitTaken(const CUnit* unit, int oldTeam, int newTeam) override;
 		void UnitGiven(const CUnit* unit, int oldTeam, int newTeam) override;
@@ -134,7 +133,7 @@ class CLuaHandle : public CEventClient
 			float damage,
 			int weaponDefID,
 			int projectileID,
-			bool paralyzer);
+			bool paralyzer) override;
 		void UnitStunned(const CUnit* unit, bool stunned) override;
 		void UnitExperience(const CUnit* unit, float oldExperience) override;
 		void UnitHarvestStorageFull(const CUnit* unit) override;
@@ -160,6 +159,8 @@ class CLuaHandle : public CEventClient
 		void UnitUnitCollision(const CUnit* collider, const CUnit* collidee) override;
 		void UnitFeatureCollision(const CUnit* collider, const CFeature* collidee) override;
 		void UnitMoveFailed(const CUnit* unit) override;
+
+		void RenderUnitDestroyed(const CUnit* unit) override;
 
 		void FeatureCreated(const CFeature* feature) override;
 		void FeatureDestroyed(const CFeature* feature) override;
@@ -224,6 +225,11 @@ class CLuaHandle : public CEventClient
 		void DrawWorldShadow() override;
 		void DrawWorldReflection() override;
 		void DrawWorldRefraction() override;
+		void DrawGroundPreForward() override;
+		void DrawGroundPreDeferred() override;
+		void DrawGroundPostDeferred() override;
+		void DrawUnitsPostDeferred() override;
+		void DrawFeaturesPostDeferred() override;
 		void DrawScreenEffects() override;
 		void DrawScreen() override;
 		void DrawInMiniMap() override;
@@ -233,6 +239,12 @@ class CLuaHandle : public CEventClient
 		//FIXME void MetalMapChanged(const int x, const int z);
 
 		void CollectGarbage() override;
+
+		void DownloadQueued(int ID, const string& archiveName, const string& archiveType) override;
+		void DownloadStarted(int ID) override;
+		void DownloadFinished(int ID) override;
+		void DownloadFailed(int ID, int errorID) override;
+		void DownloadProgress(int ID, long downloaded, long total) override;
 
 	public: // Non-eventhandler call-ins
 		void Shutdown();
@@ -247,7 +259,7 @@ class CLuaHandle : public CEventClient
 		CLuaHandle(const string& name, int order, bool userMode, bool synced);
 		virtual ~CLuaHandle();
 
-		void KillLua();
+		void KillLua(bool inFreeHandler = false);
 
 		static void PushTracebackFuncToRegistry(lua_State* L);
 
@@ -271,13 +283,12 @@ class CLuaHandle : public CEventClient
 
 	protected:
 		bool userMode;
+		bool killMe; // set for handles that fail to RunCallIn
 
 		lua_State* L;
+		lua_State* L_GC;
 		luaContextData D;
 
-		lua_State* L_GC;
-
-		bool killMe;
 		string killMsg;
 
 		vector<bool> watchUnitDefs;
@@ -303,24 +314,19 @@ class CLuaHandle : public CEventClient
 		static int CallOutIsEngineMinVersion(lua_State* L);
 
 	public: // static
-		static inline LuaShaders& GetActiveShaders(lua_State* L)  { return GetLuaContextData(L)->shaders; }
+		static inline LuaShaders& GetActiveShaders(lua_State* L) { return GetLuaContextData(L)->shaders; }
 		static inline LuaTextures& GetActiveTextures(lua_State* L) { return GetLuaContextData(L)->textures; }
 		static inline LuaFBOs& GetActiveFBOs(lua_State* L) { return GetLuaContextData(L)->fbos; }
-		static inline LuaRBOs& GetActiveRBOs(lua_State* L)     { return GetLuaContextData(L)->rbos; }
+		static inline LuaRBOs& GetActiveRBOs(lua_State* L) { return GetLuaContextData(L)->rbos; }
 		static inline CLuaDisplayLists& GetActiveDisplayLists(lua_State* L) { return GetLuaContextData(L)->displayLists; }
 
 		static void SetDevMode(bool value) { devMode = value; }
 		static bool GetDevMode() { return devMode; }
 
-		static void SetModUICtrl(bool value) { modUICtrl = value; }
-		static bool GetModUICtrl() { return modUICtrl; }
-
-		static void HandleLuaMsg(int playerID, int script, int mode,
-			const std::vector<boost::uint8_t>& msg);
+		static void HandleLuaMsg(int playerID, int script, int mode, const std::vector<boost::uint8_t>& msg);
 
 	protected: // static
 		static bool devMode; // allows real file access
-		static bool modUICtrl; // allows non-user scripts to use UI controls
 
 		// FIXME: because CLuaUnitScript needs to access RunCallIn
 		friend class CLuaUnitScript;

@@ -5,24 +5,22 @@
 
 #include <string>
 #include <vector>
-#include <map>
 #include <list>
-#include <boost/utility.hpp> //! boost::noncopyable
 
 #include "TeamBase.h"
 #include "TeamStatistics.h"
 #include "Sim/Misc/Resource.h"
-#include "Sim/Units/UnitSet.h"
 #include "System/Color.h"
 #include "ExternalAI/SkirmishAIKey.h"
 #include "Lua/LuaRulesParams.h"
 
+class CUnit;
 
-class CTeam : public TeamBase, private boost::noncopyable //! cannot allow shallow copying of Teams, contains pointers
+class CTeam : public TeamBase
 {
-	CR_DECLARE(CTeam)
+	CR_DECLARE_DERIVED(CTeam)
 public:
-	CTeam(int _teamNum);
+	CTeam();
 
 	void ResetResourceState();
 	void SlowUpdate();
@@ -48,6 +46,9 @@ public:
 	void SetMaxUnits(unsigned int n) { maxUnits = n; }
 	unsigned int GetMaxUnits() const { return maxUnits; }
 	bool AtUnitLimit() const { return (units.size() >= maxUnits); }
+
+	TeamStatistics& GetCurrentStats() { return statHistory.back(); }
+	const TeamStatistics& GetCurrentStats() const { return statHistory.back(); }
 
 	CTeam& operator = (const TeamBase& base) {
 		TeamBase::operator = (base);
@@ -77,8 +78,9 @@ public:
 
 	bool isDead;
 	bool gaia;
+	bool removeUnits;
 
-	CUnitSet units;
+	std::vector<CUnit*> units;
 
 	SResourcePack res;
 	SResourcePack resStorage;
@@ -93,12 +95,10 @@ public:
 	SResourcePack resPrevExcess;
 
 	int nextHistoryEntry;
-	TeamStatistics* currentStats;
 	std::list<TeamStatistics> statHistory;
 
 	/// mod controlled parameters
 	LuaRulesParams::Params  modParams;
-	LuaRulesParams::HashMap modParamsMap; //< name map for mod parameters
 
 	/// unsynced
 	SColor origColor;

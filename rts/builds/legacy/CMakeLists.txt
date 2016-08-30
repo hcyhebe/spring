@@ -75,17 +75,12 @@ LIST(APPEND engineLibraries engineaGui)
 LIST(APPEND engineLibraries ${Boost_THREAD_LIBRARY})
 LIST(APPEND engineLibraries ${SPRING_SIM_LIBRARIES})
 LIST(APPEND engineLibraries engineSim)
+LIST(APPEND engineLibraries pr-downloader_static)
 
 ### Assemble external incude dirs
 LIST(APPEND engineIncludes ${OPENAL_INCLUDE_DIR})
 
 INCLUDE_DIRECTORIES(${engineIncludes})
-
-if   (MSVC)
-	# set vmg flag to work around small pointer-to-member bug in spring
-	# and enable multi-processor compiling
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /vmg /MP")
-endif(MSVC)
 
 ### Build the executable
 ADD_EXECUTABLE(engine-legacy ${EXE_FLAGS} ${engineSources} ${ENGINE_ICON} ${engineHeaders})

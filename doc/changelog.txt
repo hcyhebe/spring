@@ -1,15 +1,501 @@
 Spring changelog
-(since 85.0: "!" prefix indicate backward compability broke)
+(since 85.0: "!" prefix indicate backward compatibility broke)
 (numbers in brackets normally mean the mantis ticket ID)
 
+-- 104.0 --------------------------------------------------------
+General:
+ - Add onlyLocal boolean value to modinfo.lua
+ - Assorted bugfixes and optimisations
+
+Lua:
+ ! Undeprecate {unit,feature}def.modelname and add .modeltype and .modelpath to
+   allow reading these without loading the model. Removed def.model.{name,type,path}
+   so they aren't used accidentally.
+
+-- 103.0 --------------------------------------------------------
+General:
+ - Fix & Improve performace
+ - Add 'allowTake' modoption (default: true) to enable/disable /take (by lamer)
+ - Add onlyLocal boolean value to modinfo.lua (default false)
+   If true, spring won't listen for incoming connections when running
+   this game unless GAME\OnlyLocal is specified in the start script.
+
+Sim:
+ - Add new UnitDef tag "buildingMask" and LuaSyncedCtrl function "SetSquareBuildingMask". (by ivand)
+   Both used in conjunction to allow/disallow construction of certain unit types (via setting buildingMask)
+   on certain tiles (via SetSquareBuildingMask). By default all tiles and buildings have mask of 1
+
+Rendering:
+ - Ghosted buildings are now consistent when changing specTeam/specFullView
+
+
+Bugfixes:
+ - Fix #5301 Units with restricted firearcs do not turn to aim
+ - Fix #5302 extreme slowdown
+
+-- 102.0 --------------------------------------------------------
+General:
+ - Fix & Improve LoS performance
+ ! remove LuaModUICtrl config setting
+ ! remove ClassicGroundMoveType
+ ! remove SpringLobby from spring installer
+ - update model matrices on demand instead of once per frame
+
+Sim:
+ ! allow units to unstuck themselves from an unpathable square
+   into an adjacent pathable one
+ ! COB: deprecate unit/team/allyteam/global vars. Use lua functions instead
+ - prevent accidental friendly fire from direct line of fire weapons
+
+Lua:
+ - Add {Set,Get}FeatureRulesParam(s)
+ ! Get{Game,Team,Unit,Feature}RulesParams will now return { paramName = value, ... }
+ - You can now delete RulesParams by calling Set{Game,Team,Unit,Feature}RulesParam with no value argument or a nil one.
+ - Add new Spring.ClearUnitGoal(unitID) callout.
+ - add GamePaused and GameProgress callins to base gadget-handler
+ - extend builtin uniform binding for custom Lua materials
+   SEE "fix LuaMaterial uniform management" BELOW FOR THE
+   LIST OF NEW LOCATION KEYS THAT ARE RECOGNIZED AS OF 102
+ - Add Spring.GetFrameTimer(bool synced) to get a timer for the start of the frame
+   this should give better results for camera interpolations.
+ - Add an optional weaponNum argument to SetUnitTarget.
+ - Update shader errorlog even if compilation was successful
+ - Remove updateMatrix argument in Spring.UnitScript.{Move,Turn} as matrices will be automatically updated if necessary.
+ - Add new Spring.Start callout for launching a new Spring instance without terminating the existing one. See Spring.Restart for parameters.
+ - Add new VFS.GetAvailableAIs([gameName] [, mapName])->{ai1, ai2, ...} callout for getting a list of all Spring AIs. The optional gameName and mapName parameters can be used to include game/map specific LuaAIs in the list.
+
+Save/Load:
+ ! remove UseCREGSaveLoad and add /LuaSave which generates .slsf files
+ ! compress creg saves
+ - SaveFile can be specified in start script in order to start from a save
+
+Rendering:
+ - reduce number of team-color updates for custom shaders
+ - use frame-extrapolation for smoother feature movement
+ - draw all model nanoframe stages with shaders by default
+ - skip drawing icons for void-space units
+ - disable BumpWaterRefraction = 2 for now.
+
+AI:
+ - make skirmishAiCallback_Unit_getResource{Use,Make} not round their return values to ints
+ - RulesParams are now accessible through skirmishAiCallback_{Game,Unit,Team,Feature}_getRulesParamValue{String,Float}
+
+Misc:
+ - make the time server spends in sleep calls configurable (for dedicated hosts)
+ - rename the 'ReflectiveWater' config-key to 'Water' (to match the command)
+ - set the 'GroundDetail' config-val only when it changes, not on shutdown
+ - add '/GroundDetail <val>' text command to modify ground detail on the fly
+ - auto-normalize normals and tangents for all AssImp-loaded models
+ - add a gameDeferredDraw=5 drawMode value (handy for Draw{Unit,Feature} to know)
+
+Bugfixes:
+ - fix invisible OBJ models
+ - fix gl.DeleteShader allowing repeated deletion
+ - fix drawing of being-built units during deferred pass
+ - fix invisible ground on voidwater maps when AdvMapShading=0 (in L-view)
+ - fix Spring.SetSunLighting crash when AdvMapShading=0
+ - fix Spring.ValidUnitID to accept nils again
+ - fix wreckage jumping from large *horizontal* impulse
+ - fix landed HoverAirMoveType aircraft behavior when given a command within their build range
+ ! fix LuaMaterial uniform management for materials with standard and deferred shaders
+   material tables are now expected to contain subtables defining the uniforms; instead of
+     "material = {shader = ..., cameraposloc = 123, texunits = ..., ...}"
+   say
+     "material = {shader = ..., uniforms = {cameraposloc = 123, ...}, texunits = ..., ...}"
+
+   for a material that has both types of shader, supply "standardshader",
+   "deferredshader", "standarduniforms", and "deferreduniforms" as keys
+
+   new keys for these uniform subtables can be
+     "viewmatrixloc"    // synonym for "cameraloc"
+     "projmatrixloc"    // camera projection
+     "viprmatrixloc"    // camera view-projection
+     "viewmatrixinvloc" // synonym for "camerainvloc"
+     "projmatrixinvloc" // camera inverse projection
+     "viprmatrixinvloc" // camera inverse view-projection
+     "shadowmatrixloc"  // synonym for "shadowloc"
+     "cameradirloc"     // camera forward direction
+     "sundirloc"        // synonym for "sunposloc"
+     "rndvecloc"        // random 3-vector with length in [0, 1)
+     "simframeloc"      // current simulation frame
+     "visframeloc"      // current renderer frame
+
+ - fix #5182 (unwanted sun-texture reflections)
+ - fix #5175 (microscopic FarTexture impostors)
+ - fix #5166 (wrecks buried underground on maps with negative hardness)
+ - fix #5165 (rare crash on exit or reload)
+ - fix #5161 (Spring.IsUnitAllied always returning true in unsynced gadgets)
+ - fix #5160 (Spring.SetSunLighting not working if applied in *get:Initialize and crashing when AdvMapShading=0)
+ - fix #5157 (skirmishAiCallback_Unit_get{Pos,Vel} broken with cheats enabled)
+ - fix #5155 (MoveCtrl.SetRotation not matching Spring.GetUnitRotation)
+ - fix #5149 (EVENT_ENEMY* AI events not being sent)
+ - fix #5148 (assertion failure with custom shaders)
+ - fix #5146 (missing wreckage healthbars)
+ - fix #5141 (glitchy tree rendering)
+ - fix #5136 (texture corruption with custom Lua materials)
+ - fix #5135 (missing SFX.FIRE and SFX.SMOKE effects)
+ - fix #5134 (broken zoom in track-mode with Spring camera)
+ - fix #5084 (allow LuaUI self-disabling)
+ - fix #5131 (order-lines visualization)
+ - fix #5130 (put projectiles created by Spring.SpawnProjectile in Gaia team)
+ - fix #5127 (icon-transparency over water)
+ - fix #5181 (aircraft sometimes fail to land)
+ - fix #5177 (stack-buffer-overflow in TextWrap.cpp)
+ - fix #5172 (segfault on assimp loading)
+ - fix #5173 (air transports fail to pick up units)
+ - fix #5174 (hover move type tend to exactly land on top of each other)
+ - fix #5176 (crash in CobThread)
+ - fix #5106 (Strafe planes dont land when reaching target or on 'stop' command)
+ - fix #5152 (heap-use-after-free when loading a game)
+ - fix wrong radar icons when switching specfullview
+ - fix #5216 Spring.GetVisibleUnits
+ - fix #5219 pink features & units
+ - fix #5223 buffer-overflow when using /water
+
+
+
 -- 101.0 --------------------------------------------------------
+Major:
+ - LoS (sim) overhaul
+ - SSMF Splat Detail Normal Textures (by Beherith)
+ - many new Lua rendering related features (custom feature shaders, map shaders, ...)
+ - many Lua additions
+ - Lua pr-downloader API
+ - removal of airbases & fuel
+ - transport overhaul
+ - 64bit windows builds
 
 General:
  ! change default screenshot file type to jpg. to create png use /screenshot png
+ ! pr-downloader dependency is now mandatory (statically linked with spring)
+ ! demo files are now compressed with gzip (and the suffix is .sdfz)
+ - improve data locality even further with respect to 100.0
+ - fix memory leaks and misc. crashes (some related to LoadingMT)
+ - ignore /give commands issued via autohost interface (needs an actual player)
+
+LoS:
+ ! ModInfo: remove losMul & airLosMul -> always handle los ranges in elmos in the _whole_ engine
+   WARNING: this also rescales the returned values in Lua UnitDefs!
+ ! ModInfo: make `radarMipLevel` configurable
+ ! change default airMipLevel 2->1 & radarMipLevel 3->2
+ ! ModInfo: add new sensors.alwaysVisibleOverridesCloaked (default _off_! before was always on)
+ ! modrules.lua: add new `separateJammers` tag (breaks backward compatibility!)
+   default true (old behaviour is false)
+   when enabled each allyTeam only jams their own units
+ ! get rid of los radius limit (you can now create units that cover the whole map and more)
+ - speed ups in general
+ - reduced lags introduced by LoS
+ - multithread LoS updating
+ - reduced memory usage
+ ! fix various bugs related to unit/feature movement not registered
+ ! update LoS on terrain changes
+ ! correctly handle the height of the emitter (before radarEmitHeight was always from ground height & similar units on a spot shared their emitHeight)
+ ! make LoS much smoother (now really gets called per-gameframe when the emitter moves)
+ - better circle algo
+ - add Spring.SetGlobalLos(int allyTeamID, bool globallos)
+
+Sim:
+ ! start simulation at frame 0, not at 1
+ - features now have a non-animated LocalModel and can use per-piece collision volumes
+ - RockUnit and HitByWeapon script callins now take vectors in unit-space
+ - fix acceleration rates and turn-speed limits for reversing units
+ - fix units occasionally zipping across the map after being unloaded
+ - fix unloaded units being non-colliding if transporter script attached them to piece -1
+ - fix various aircraft landing/midair-vibrating bugs
+ - fix builders sometimes ignoring their commands if they were issued without shift
+ - set better default radii for objects (and use same logic in all model parsers)
+ - make ground-unit reversing logic configurable via Spring.SetGroundMoveTypeData
+ - fix ground-units forever trying to move along their final waypoint direction in rare cases
+ - COB: always use the return value of the Killed thread to determine wreck level (none if omitted)
+ ! remap SFX.RECURSIVE piece flag from 1<<8 to 1<<14
+ ! removed hardcoded logic to zombify (stun+immobilize) a unit on death
+ ! airbases and fuel were removed, use custom commands in combination with
+   Spring.SetUnitLandGoal(unitID, x, y, z [, radius]) and the new transport changes
+   to implement this functionality in lua.
+
+Transports:
+ - every unit can now have other units attached to it using:
+  - Spring.UnitAttach(transporterID, passengerID, pieceNum)
+  - Spring.UnitDetach(passengerID)
+  - Spring.UnitDetachFromAir(passengerID)
+ - units with transportCapacity > 0 and transportMass > 0 will retain backward compatibility
+ - added Spring.SetUnitLoadingTransport(passengerID, transportID) which disables collisions
+   between the two units to allow colvol intersection during the approach.
+
+GUI/Sound:
+ ! fix default drawInMap keyshortcut on german keyboards
+ - fix displayed tooltip elevation when over minimap
+ - fix Ready button ignoring clicks after setting startpos and rejoining
+ - fix potential infinite loop during sound initialization
+
+Rendering:
+ - new Shatter animation (SFX.Explode in Cob/LUS)
+  - break the piece into parts and not triangles
+  - much faster (in creation & render time)
+ - change the trail drawing of some missile projectiles
+ - add support for SSMF Splat Detail Normal Textures (by Beherith)
+ - add deferred pass for features; note that these are drawn into
+   the same buffer as units (overwriting it, unless the new config
+   variable AllowDeferredModelBufferClear is set to false [default])
+ - allow custom shaders for being-built units
+ - allow custom Lua map shaders
+ - fix metal->los info texture switching visual harshness
+ - apply anisotropic filtering to all mipmapped SSMF textures
+ - fix shadow-pass (and general) terrain/model visibility culling
+ - fix environment reflections (broken in four different ways)
+ - fix DynamicWater artifacts at large viewing distances
+ - fix RefractiveWater not showing submerged objects with DualScreenMinimapOnLeft
+ - fix truncation of deferred model normals
+ - do not disable model shaders during world alpha-pass
+ - do not disable model shaders during water ref{le,ra}ction passes
+ - always draw water surface during alpha-pass
+ - kill shadows for fully alpha-faded features
+ - kill impostors for fully alpha-faded features
+ - write extraColor to the specTex target on the deferred side of ModelFragProg
+ - use groundSpecularColor when no specularTex exists (i.e. on basic SMF maps)
+ - shift ground decals visually so they are always aligned with objects
+ - render all types of decals with shaders
+ - draw custom commands that have two parameters
+ ! nuke support for "special" Spring{Radius,Height} pieces in assimp models
+
+GameServer:
+ - speedup gameserver exiting (reduced some io/net related sleeps)
+
+Pathing:
+ - fix cases where either no path was returned or an incorrect one
+ - switch to octile heuristic to reduce number of explored nodes
+ - increase high-resolution search range
+ - fix diagonal movement cost estimation
+ - handle PathCache crc failures
+ - make QTPFS neighbor updates a bit faster
+
+AI:
+ - plug several memory leaks in engine interface and wrappers
+ - bring ghost model drawing in a usable state again
+ - add sensor map callbacks
+ - add shield state callbacks
+ - add ground info callbacks
+ - make feature callbacks respect cheats
+
+Lua Callins:
+ ! GameID callin now gets the ID string encoded in hex.
+ ! new Lua callin RenderUnitDestroyed is now called just before a unit is
+   invalid, after it finishes its death animation.
+ ! ShieldPreDamaged will now be called for LightningCannon and BeamLaser.
+   Two new arguments were added: beamCarrierWeaponNum and beamCarrierUnitID.
+   These will be populated in place of the first argument (projID).
+ ! The following callins will now have 1-based weapon index arguments:
+     DrawShield,
+     ShieldPreDamaged,
+     AllowWeaponTargetCheck,
+     AllowWeaponTarget,
+     AllowWeaponInterceptTarget,
+     StockpileChanged
+ ! UnitCommand and UnitCmdDone argument order changed to be consistent with
+   each other and with CommandFallback & AllowCommand: (unitID,
+        unitDefID, unitTeam, cmdId, cmdParams, cmdOpts, cmdTag)
+   Note that UnitCommand will now receive cmdOpts as a table and not as a number
+ - new callin UnitReverseBuilt, called when a living unit becomes a nanoframe again
+ - add new callins DrawGroundPreForward and DrawGroundPreDeferred
+   these run at the start of their respective passes when a custom
+   map shader has been assigned via Spring.SetMapShader (convenient
+   for setting uniforms)
+ - add new callin DrawGroundPostDeferred; this runs at the end of its
+   respective deferred pass and allows proper frame compositing (with
+   ground flashes/decals/foliage/etc, which are drawn between it and
+   DrawWorldPreUnit) via gl.CopyToTexture
+ - add new callins DrawUnitsPostDeferred and DrawFeaturesPostDeferred
+   these run at the end of their respective deferred passes to inform
+   Lua code it should make use of the $model_gbuffer_* textures before
+   another pass overwrites them (and to allow proper blending with e.g.
+   cloaked objects which are drawn between these events and DrawWorld
+   via gl.CopyToTexture)
+   NOTE: the *PostDeferred events are only sent (and only have a real
+   purpose) if forward drawing is disabled, whereas the DrawGroundPre*
+   events are only sent if the map has a custom shader!
+
+LuaDefs:
+ ! los related UnitDefTags are now in elmos
+ ! Lua{Feature,Unit}Defs:
+   make the "model" subtable available (as it is for LuaUnitDefs)
+   move the {min,max,mid}{x,y,z} values to this table (these can now be accessed
+   using e.g. *Defs[i].model.midx)
+   deprecate *Defs[i].modelname, use *Defs[i].model.path instead
+
+Lua (lighting):
+ ! Game.fogColor constant is no longer available, use gl.GetAtmosphere("fogColor")
+ ! Game.groundAmbientColor, Game.groundSpecularColor and Game.groundSunColor
+   are no longer available, use gl.GetSun() instead with appropriate parameters
+   - add unsynced callout Spring.SetSunLighting(table params) -> nil
+     It can be used to modify the following sun lighting parameters:
+     {ground,unit}{Ambient,Diffuse,Specular}Color and specularExponent
+     example usage: Spring.SetSunLighting({
+      groundAmbientColor = {1, 0.1, 1},
+      groundDiffuseColor = {1, 0.1, 1},
+     })
+ - add unsynced callout Spring.SetAtmosphere(table params) -> nil
+   It can be used to modify the following atmosphere parameters:
+   fog{Start,End}, {sun,sky,cloud}Color
+   example usage: Spring.SetAtmosphere({
+     fogStart = 0,
+     fogEnd   = 0.5,
+     fogColor = { 0.7, 0.2, 0.2, 1 },
+   })
+ - add unsyced callout gl.GetAtmosphere(name) -> number | number r, number g, number b
+   Works similar to gl.GetSun(), and can be used to extract atmosphere parameters.
+   See Spring.SetAtmosphere for details.
+
+Lua (projectiles):
+ - new Spring.DeleteProjectile(projID) for silently removing projectiles (no explosion).
+ - new Spring.{Get,Set}UnitWeaponDamages similar to *UnitWeaponState but for damage and explosion values.
+ - new Spring.{Get,Set}ProjectileDamages similar to the above, for projectiles in flight.
+ ! Weapons with tracking will use a radar dot position unless
+   Spring.SetProjectileIgnoreTrackingError(projID, bool ignore) is called.
+
+Lua (model rendering):
+ ! reading from gl_TextureEnvColor[0] in custom shaders to set team color
+   will no longer work, declare a uniform vec4 named "teamColor" instead
+   (the engine will fill this in for you)
+ ! gl.UnitShape and gl.FeatureShape now take three extra boolean arguments
+   and set their relevant GL state internally (so that calling only these
+   functions is enough to get correctly rendered models; pass in 'false'
+   for the [new] THIRD argument to get the fixed behavior, omit it or pass
+   in 'true' [default] to render with your own custom state instead)
+   NOTE:
+     the [new] FOURTH argument should be 'true' if in DrawScreen and 'false'
+     (default) if in DrawWorld; any transforms for these two functions *MUST*
+     include a gl.LoadIdentity call when argument #3 is false (whether they
+     are used in DrawWorld or in DrawScreen)
+     the [new] FIFTH argument determines whether the model is drawn opaque
+     ('true' [default]) or with translucency ('false'); only has an effect
+     when argument #3 is false
+ - add callouts Spring.Preload{Feature,Unit}DefModel allowing the engine
+   to load the unit's model (and texture) in a background thread.
+   wreckages and buildOptions of a unit are automatically preloaded.
+ - new Spring.SetFeatureFade(featureID, bool) to control whether a feature will fade or not when zoomed out.
+ - add Spring.FeatureRendering API; allows custom shaders (technically,
+   materials) for features as its Spring.UnitRendering counterpart does
+   for units
+   note: the following two functions exist but are no-ops
+     Spring.UnitRendering.SetFeatureLuaDraw
+     Spring.FeatureRendering.SetUnitLuaDraw
+ - add callouts
+     gl.{Unit,Feature}Textures(number objID, boolean enable) -> nil
+     gl.{Unit,Feature}ShapeTextures(number defID, boolean enable) -> nil
+   these are primarily intended to be used in conjunction with
+     gl.{Unit,Feature}(objID, ..., raw=true)
+     gl.{Unit,Feature}Shape(defID, ..., raw=true)
+   and apply a model's default textures; easier than gl.Texture("$%...")
 
 Lua:
- ! GameID callin now gets the ID string encoded in hex.
- - new GetUICommands function to obtain a list of all UI commands (e.g. /luaui reload)
+ - fix LuaUI crash if a widget caused an error in its GetConfigData callin
+ - fix GadgetHandler miscounting if RemoveGadget was invoked during a callin
+ - allow custom commands to be non-queueing (handy for state toggles)
+ - LuaUI can now reload itself via Spring.SendCommands
+ - allow /lua{rules,gaia} reloading on frame 0
+ - allow Lua{Rules,Gaia} chat actions before frame 0
+ - extend Spring.TraceScreenRay to intersect a user-given plane
+ - add unitSpecularColor to the set of values returned by gl.GetSun
+ - fix typo in maphelper/setupopts.lua breaking several default options
+ ! do not start camera transitions from Spring.SetCameraState
+ ! LuaSyncedRead::GetAIInfo now returns "UNKNOWN" for non-local AI's, not "UKNOWN"
+ ! {Set,Get}UnitPieceCollisionVolumeData now receive 1-based piece index argument (was 0-based).
+ ! fix a desync related to printf/number2string conversion
+ ! Lua: fix bug that some TransformMatrix functions were revealing the true position of radar dots
+ ! fix Spring.GetUnitPieceDirection() (returns now same dir as GetEmitDirPos)
+ ! Spring.GetUnitPieceInfo() will now set "[null]" as the parent name of the root piece instead of ""
+ - add Spring.SetGlobalLos(int allyTeamID, bool globallos)
+ - add Spring.IsUnitIn[Los, AirLos, ...]
+   Note this is _not_ equal with Spring.IsPosInLos with the unit's pos!
+   I.e. the ground maybe in radar range, but the unit is jammed and so not visible
+ - add Spring.GetUnitFeatureSeparation(unitID, featureID[, dist2D])
+ - add Spring.GetFeatureSeparation(featureID1, featureID2[, dist2D])
+ - new Spring.GetUICommands function to obtain a list of all UI commands (e.g. /luaui reload)
+ - new VFS.CalculateHash function that calculates hash (in base64 form) of a given string (with md5 support initially)
+ - new Spring.{Get,Set}{Unit,Feature}Mass functions
+ - new Spring.SetFeatureMoveCtrl(featureID [, boolean enable [, number* args]]) to control feature movement
+   the number* arguments are parsed as follows and all optional
+   if enable is true:
+     [, velVector(x,y,z) -- initial velocity for feature
+     [, accVector(x,y,z) -- acceleration added every frame
+     ]]
+   if enable is false:
+     [, velocityMask(x,y,z) -- dimensions in which velocity is allowed to build when not using MoveCtrl
+     [,  impulseMask(x,y,z) -- dimensions in which impulse is allowed to apply when not using MoveCtrl
+     [, movementMask(x,y,z) -- dimensions in which feature is allowed to move when not using MoveCtrl
+     ]]]
+ - add callouts (see their Unit equivalents for documentation)
+     Spring.{Get,Set}FeatureRotation
+     Spring.{Get,Set}FeaturePieceCollisionVolumeData
+     Spring.GetFeatureLastAttackedPiece
+     Spring.GetFeaturePieceMap
+     Spring.GetFeaturePieceList
+     Spring.GetFeaturePieceInfo
+     Spring.GetFeaturePiecePosition
+     Spring.GetFeaturePieceDirection
+     Spring.GetFeaturePiecePosDir
+     Spring.GetFeaturePieceMatrix
+
+     Spring.SetFeatureNoDraw
+     Spring.GetFeatureNoDraw
+
+     gl.FeatureRaw
+     gl.FeatureMultMatrix
+     gl.FeaturePiece
+     gl.FeaturePieceMatrix
+     gl.FeaturePieceMultMatrix
+ - add unsynced callout SetSkyBoxTexture(string texName) -> nil
+   example usage: Spring.SetSkyBoxTexture("myskybox.dds")
+ - add unsynced callout Spring.SetMapShadingTexture(string texType, string texName) -> boolean
+   example usage: Spring.SetMapShadingTexture("$ssmf_specular", "name_of_my_shiny_texture")
+ - add unsynced callout Spring.SetMapShader(
+     number standardShaderID,
+     number deferredShaderID
+   ) -> nil
+   (the ID's must refer to valid programs returned by gl.CreateShader;
+   passing in a value of 0 will cause the respective shader to revert
+   back to its engine default)
+   custom map shaders that declare a uniform ivec2 named "texSquare"
+   can sample from the default diffuse texture(s), which are always
+   bound to TU 0
+ - extend the signatures of the Spring.SetDraw{Ground,Models}Deferred
+   callouts; allows disabling the forward {Unit,Feature,Ground}Drawer
+   passes
+     Spring.SetDrawGroundDeferred(
+          boolean drawGroundDeferred
+       [, boolean drawGroundForward]
+     )
+
+     Spring.SetDrawModelsDeferred(
+          boolean drawUnitsDeferred,
+          boolean drawFeaturesDeferred
+       [, boolean drawUnitsForward
+       [, boolean drawFeaturesForward ]]
+     )
+   expose the following $named textures to LuaOpenGL
+     "$map_reflection" (same as "$reflection")
+     "$sky_reflection" (defined for SSMF maps that have a skyReflectModTex)
+     "$detail"
+     "$normals" (auto-generated)
+     "$ssmf_normals"
+     "$ssmf_specular"
+     "$ssmf_splat_distr"
+     "$ssmf_splat_detail"
+     "$ssmf_splat_normals" or "$ssmf_splat_normals:X"
+     "$ssmf_sky_refl"
+     "$ssmf_emission"
+     "$ssmf_parallax"
+     'X' can be a value between 0 and 3, defaults to 0 if ":X" is omitted
+
+Lua pr-downloader API:
+ callouts:
+ - VFS.DownloadArchive(name, category)
+ callins:
+ - DownloadStarted(id)
+ - DownloadFinished(id)
+ - DownloadFailed(id, errorID)
+ - DownloadProgress(id, downloaded, total)
+
 
 -- 100.0 --------------------------------------------------------
 Major:
@@ -22,7 +508,7 @@ InfoTexture:
 WeaponDefs:
  - fix visibleShieldHitFrames not read from shield subtable
  ! scale flighttime with GAME_SPEED and not 32
- - warn on unknown tags
+ - warn on unknown tags (so you can de-TA-ism your weapondefs finally)
   - weapondefs_post.lua: set legacy weapontype tags to nil, so they don't cause engine warnings
 
 LOS:
@@ -263,7 +749,7 @@ Lua:
 Rendering:
  - glFont: make inlined colorcodes reuse current set alpha value
 
-Pather:
+Pathing:
  - make lowRes PathEstimator using medRes PE instead of maxRes PathFinder (massively reducing cputime)
  - massive cleanup & modularization
  - reduced memory usage
@@ -525,7 +1011,7 @@ Bugfixes:
 -- 95.0 ---------------------------------------------------------
 
 Major:
- ! new datadir structure: http://springrts.com/phpbb/viewtopic.php?f=12&t=30044 & http://springrts.com/dl/buildbot/default/master/95.0/manpages/spring.6.html
+ ! new datadir structure: https://springrts.com/phpbb/viewtopic.php?f=12&t=30044 & https://springrts.com/dl/buildbot/default/master/95.0/manpages/spring.6.html
  ! new LuaIntro (Lua based loadscreen with examples)
  - add map border rendering (+ /mapborder command)
  - bugfixes & speedups
@@ -567,7 +1053,7 @@ Misc:
  - switch to a high precision clock all over the engine (including Lua)
    NOTE THAT THIS IS DISABLED BY DEFAULT ON WINDOWS BUILDS (cf. UseHighResTimer)
  - copied a lot config descriptions from wiki to the engine (thx for all the wiki'ers)
- - http://springrts.com/wiki/Springsettings.cfg is now automatically updated with each release
+ - https://springrts.com/wiki/Springsettings.cfg is now automatically updated with each release
  ! disable build of spring-multithreaded (unmaintained / doesn't compile)
  ! disable luaThreadingModel > 2, can be overriden with EnableUnsafeAndBrokenMT=1
 	fixes #3774, #2884, #2784, #3673, #3808
@@ -868,7 +1354,7 @@ Lua:
  - Spring.{Get,Diff}Timer(s): save some precision (important with new high-resolution timers)
  - Spring.DiffTimers: accept optional third argument (boolean) to return dt in milliseconds
 
- - add some utility functions to the math table, see http://springrts.com/wiki/Lua_MathExtra
+ - add some utility functions to the math table, see https://springrts.com/wiki/Lua_MathExtra
 
 Rendering:
  - LoadingMT: add a runtime check that should detect incompatibilities
@@ -925,7 +1411,7 @@ Buildprocess:
  ! removed VS project files / fix compile with Visual Studio 2012 Express for Windows Desktop:
     use cmake -G "Visual Studio 11" to generate project files
     dropped support for Visual Studio 8, 9 & 10
-    see http://springrts.com/wiki/Building_Spring_on_Windows
+    see https://springrts.com/wiki/Building_Spring_on_Windows
  ! compile Spring using c++11 standard
  - fix clang compile errors + some bugs detected by clang
  ! slightly refactored build system, now every target can be disabled:
@@ -1189,7 +1675,7 @@ Major Changes:
  - much faster Sim (~20% and ~50% with working OMP)
  - new cmdline arguments
  - better pathing
- - add experimental map generator (see http://springrts.com/wiki/Mapgen for details)
+ - add experimental map generator (see https://springrts.com/wiki/Mapgen for details)
  - some new sim/weapon features
 
 AI:
@@ -1311,7 +1797,7 @@ Models/Assimp:
  - extended auto-finding of textures
 
 Weapons/WeaponDefs:
- ! remove of manualBombSettings (backward-compability code in weapondefs_post.lua)
+ ! remove of manualBombSettings (backward-compatibility code in weapondefs_post.lua)
  ! fix: half craterAreaOfEffect the same way as it is done with damageAreaOfEffect
  ! removed color1 (hue) & color2 (sat). Use rgbColor instead!
  ! removed isShield. Use weaponType="Shield" instead!
@@ -1392,7 +1878,7 @@ Sim Bugfixes:
  - fix 'Crashing aircraft can be reclaimed' (3288)
  - fix 'Units get stuck in sea labs on build completion' (3290)
  - fix 'Paralyzed landed aircraft start moving forward slowly' (3287)
- - fix bug reported by jamerlan (http://springrts.com/phpbb/viewtopic.php?p=529204#p529204)
+ - fix bug reported by jamerlan (https://springrts.com/phpbb/viewtopic.php?p=529204#p529204)
  - make HoverAirMoveType aircraft able to crash (3289)
  - fix 'Move/Turn (piece) fails with negative speed' (3300)
  - fix "Total velocity loss during a prolonged unit-to-unit [skidding] collision" (3302)
@@ -1541,7 +2027,7 @@ Changes:
  - limit infolog.txt buffer to 8kB
  - open a MessageBox on systems with unsupported GPUs (+drivers) on engine start (suppressible with a config-tag)
  ! remove selectkeys.txt support (use uikeys.txt instead)
- ! remove TASServer.jar (outdated, use http://springrts.com/wiki/Spring_on_a_LAN )
+ ! remove TASServer.jar (outdated, use https://springrts.com/wiki/Spring_on_a_LAN )
  ! send gameID and SDF filename with SERVER_STARTPLAYING to autohost
  ! remove deprecated LogSubsystems config var
  - do not send GameOver from a client that timed out
@@ -1631,7 +2117,7 @@ Pathing:
 
 Lua:
  ! some config values are now write protected (Spring.SetConfig*)
- - added luasocket support for widgets, see http://springrts.com/wiki/LuaSocket
+ - added luasocket support for widgets, see https://springrts.com/wiki/LuaSocket
  - fixed params of Spring.MarkerAddPoint & Spring.MarkerAddLine
  - call AllowWeaponTarget at the end of the queue, so lua only gets those units which are _not_ filtered by the engine
  ! LuaSyncedRead: better hide enemy radarblobs unit-info
@@ -2032,7 +2518,7 @@ Engine:
  - use "game" instead of "mod" in many places
  - add "isolation" mode (do not use global data-dirs)
  - change lobbyserver main address to "lobby.springrts.com"
- - use http://springrts.com/ everywhere (deprecate clan-sy links)
+ - use https://springrts.com/ everywhere (deprecate clan-sy links)
  - ArchiveMover uses unitsync to detect the writable data dir
  - improve version logging on non-Windows OSs
  - include player-name in log message when resingning
@@ -2047,7 +2533,7 @@ Engine:
  - add optional high-loss network modes to make spring playable on very lossy connections (NetworkLossFactor = 0|1|2)
 
 Engine / bugfixes:
- - too many to list, see http://springrts.com/mantis/changelog_page.php (incomplete!)
+ - too many to list, see https://springrts.com/mantis/changelog_page.php (incomplete!)
  - calculate the team unit-limit without ancient hacks
  - stop the maxunits team restriction from applying to Gaia (#2435)
  - fix ray-ground intersections when camera is outside map
@@ -2268,7 +2754,7 @@ Installer:
  - create minimal-portable .7z version of engine and reuse it in installer
  - ai's are now installed always (removed individual sections)
  - add registry key to unitsync.dll HKLM\Software\Spring\SpringEngineHelper
- - replace readme.html with http://springrts.com/wiki/Read_Me_First
+ - replace readme.html with https://springrts.com/wiki/Read_Me_First
 
 
 -- 0.82.7.1 ---------------------------------------------------------
@@ -2646,10 +3132,10 @@ Engine / Rendering:
  - fixed alpha-masked shadows for S3O models
  - fixed ATI alpha masked shadows (trees, features)
  - fixed far-textures (caused changing teamcolors and disappearing units)
- - support the OBJ model format (http://springrts.com/phpbb/viewtopic.php?f=9&t=22635)
+ - support the OBJ model format (https://springrts.com/phpbb/viewtopic.php?f=9&t=22635)
  - support specular lighting, multiple blendable detail textures, and sky reflections on SMF maps ("SSMF")
-     http://springrts.com/phpbb/viewtopic.php?f=13&t=21951
-     http://springrts.com/phpbb/viewtopic.php?f=13&t=22564 (slightly outdated wrt. the SMD parameters)
+     https://springrts.com/phpbb/viewtopic.php?f=13&t=21951
+     https://springrts.com/phpbb/viewtopic.php?f=13&t=22564 (slightly outdated wrt. the SMD parameters)
  - converted all shadow, tree, grass, model, and map shaders to GLSL
  - vertex-animated grass; maps can specify the grass blade- and shading-textures and the dimensions/angle for blades
  - refactored and abstracted unit/feature/projectile drawing to be format-agnostic
@@ -2797,7 +3283,7 @@ AIs:
  - send an Update event before the first UnitCreated (when initializing mid-game)
 
 Bugfixes:
- - LightingCannon (sic) finally isn't supported anymore, use LightningCannon instead (default weapondef_post.lua includes backward compability)
+ - LightingCannon (sic) finally isn't supported anymore, use LightningCannon instead (default weapondef_post.lua includes backward compatibility)
  - fixed a bug in LuaParser, so you can now use booleans in lua CEG configfiles (before it just accepted "1"/"0" for some tags)
  - fixed occasional bug where countdown time went into negative numbers and game never started
  - fixed impactOnly ignored features
@@ -3553,7 +4039,7 @@ LUA changes:
  - Renamed 'gui.lua' to 'luaui.lua'
  - Removed LuaCob, and redirected Cob2Lua calls to LuaRules
  - removed the following compatibility defines from luaconf.h
-   (can break compability with old lua scripts):
+   (can break compatibility with old lua scripts):
     LUA_COMPAT_GETN
     LUA_COMPAT_VARARG
     LUA_COMPAT_MOD
@@ -5223,8 +5709,8 @@ Unitsync:
 - windows users can use [VSync=-1] to use system default
 - allow selection of vsync rate
 
-- [feature] A new group AI, "MexUpgrader AI" has been added. See http://springrts.com/wiki/MexUpgrader_AI for more info.
-- [feature] Custom unit icons are supported. See http://springrts.com/wiki/CustomUnitIcons for more info.
+- [feature] A new group AI, "MexUpgrader AI" has been added. See https://springrts.com/wiki/MexUpgrader_AI for more info.
+- [feature] Custom unit icons are supported. See https://springrts.com/wiki/CustomUnitIcons for more info.
 - [bugfix] 'Quit and Resign' dialog now also appears when you're hosting, and stays hidden when the game is over.
 - [bugfix] Commands on enemy units (attack, reclaim) get canceled automatically when the unit leaves LOS / radar.
 - [change] 'Quit and Resign' dialog now only gives everything to allies (and not enemies) if they are still alive.
@@ -5353,7 +5839,7 @@ Unitsync:
 - Adds support for using arbitary team colors, teamcolor textures for 3do need to be slightly changed to accomendate this (see the base texture archive to see how its done)
 - Increased max camera zoom out (zooming to far can cause slowdowns/graphical glitches)
 - Added Radar group AI from colorblind: It notifies the player of incoming enemy units.
-- Added custom explosion generator: It can be enabled using "explosiongenerator=custom:SomeExplosionGeneratorName" in the weapon TDF. See the wiki page http://springrts.com/wiki/CustomExplosionGenerators for more info.
+- Added custom explosion generator: It can be enabled using "explosiongenerator=custom:SomeExplosionGeneratorName" in the weapon TDF. See the wiki page https://springrts.com/wiki/CustomExplosionGenerators for more info.
 - Tab will now bring zoom out to show all map in any camera mode, tab again zooms back to the mouse cursor.
 - Added GetGravity(), GetUnitDefHeight() and GetUnitDefRadius() to AI interface
 - Mod can now be selected in the single player menu.

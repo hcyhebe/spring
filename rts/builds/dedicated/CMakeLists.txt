@@ -116,6 +116,7 @@ SET(system_files
 	${ENGINE_SRC_ROOT_DIR}/System/SafeCStrings.c
 	${ENGINE_SRC_ROOT_DIR}/System/SafeVector.cpp
 	${ENGINE_SRC_ROOT_DIR}/System/UnsyncedRNG.cpp
+	${ENGINE_SRC_ROOT_DIR}/System/UriParser.cpp
 	${ENGINE_SRC_ROOT_DIR}/System/Util.cpp
 	${ENGINE_SRC_ROOT_DIR}/System/float4.cpp
 	${ENGINE_SRC_ROOT_DIR}/System/Log/Backend.cpp
@@ -170,6 +171,9 @@ TARGET_LINK_LIBRARIES(engine-dedicated ${engineDedicatedLibraries})
 IF    (MINGW)
 	TARGET_LINK_LIBRARIES(engine-dedicated ${WS2_32_LIBRARY} ${IMAGEHLP_LIBRARY} ${WINMM_LIBRARY})
 ENDIF (MINGW)
+IF    (MSVC)
+	TARGET_LINK_LIBRARIES(engine-dedicated ${DBGHELP_LIBRARY})
+ENDIF (MSVC)
 Add_Dependencies(engine-dedicated generateVersionFiles)
 
 INSTALL(TARGETS engine-dedicated DESTINATION ${BINDIR})

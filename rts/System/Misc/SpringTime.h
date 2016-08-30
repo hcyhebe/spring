@@ -15,7 +15,7 @@
 // #define FORCE_CHRONO_TIMERS
 // #define FORCE_BOOST_CHRONO
 
-#if (__cplusplus > 199711L) && !defined(FORCE_BOOST_CHRONO)
+#if (__cplusplus > 199711L) && !defined(FORCE_BOOST_CHRONO) || defined(_MSC_VER)
 	#define SPRINGTIME_USING_STDCHRONO
 	#undef gt
 	#include <chrono>
@@ -124,7 +124,6 @@ public:
 private:
 	// convert integer to spring_time (n is interpreted as number of nanoseconds)
 	static spring_time spring_time_native(const int64 n) { spring_time s; s.x = n; return s; }
-
 	void Serialize(creg::ISerializer* s);
 
 private:

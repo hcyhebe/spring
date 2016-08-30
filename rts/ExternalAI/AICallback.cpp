@@ -356,9 +356,9 @@ int CAICallback::GetUnitGroup(int unitId)
 	return groupId;
 }
 
-const std::vector<CommandDescription>* CAICallback::GetGroupCommands(int groupId)
+const std::vector<const SCommandDescription*>* CAICallback::GetGroupCommands(int groupId)
 {
-	static std::vector<CommandDescription> tempcmds;
+	static std::vector<const SCommandDescription*> tempcmds;
 	return &tempcmds;
 }
 
@@ -394,9 +394,9 @@ int CAICallback::GiveOrder(int unitId, Command* c)
 	return 0;
 }
 
-const std::vector<CommandDescription>* CAICallback::GetUnitCommands(int unitId)
+const std::vector<const SCommandDescription*>* CAICallback::GetUnitCommands(int unitId)
 {
-	const std::vector<CommandDescription>* unitCommands = NULL;
+	const std::vector<const SCommandDescription*>* unitCommands = NULL;
 
 	const CUnit* unit = GetMyTeamUnit(unitId);
 	if (unit) {
@@ -1016,7 +1016,8 @@ const unsigned short* CAICallback::GetRadarMap()
 
 const unsigned short* CAICallback::GetJammerMap()
 {
-	return &losHandler->commonJammer.losMaps[0].front();
+	const int jammerAllyTeam = modInfo.separateJammers ? teamHandler->AllyTeam(team) : 0;
+	return &losHandler->jammer.losMaps[jammerAllyTeam].front();
 }
 
 const unsigned char* CAICallback::GetMetalMap()
@@ -1098,28 +1099,35 @@ void CAICallback::DeleteFigureGroup(int group)
 
 
 
-void CAICallback::DrawUnit(const char* unitName, const float3& pos,
-		float rotation, int lifetime, int teamId, bool transparent,
-		bool drawBorder, int facing)
-{
+void CAICallback::DrawUnit(
+	const char* unitName,
+	const float3& pos,
+	float rotation,
+	int lifetime,
+	int teamId,
+	bool transparent,
+	bool drawBorder,
+	int facing
+) {
 	CUnitDrawer::TempDrawUnit tdu;
-	tdu.unitdef = unitDefHandler->GetUnitDefByName(unitName);
-	if (!tdu.unitdef) {
+	tdu.unitDef = unitDefHandler->GetUnitDefByName(unitName);
+
+	if (tdu.unitDef == nullptr) {
 		LOG_L(L_WARNING, "Unknown unit in CAICallback::DrawUnit %s", unitName);
 		return;
 	}
+
+	tdu.team = teamId;
+	tdu.facing = facing;
+	tdu.timeout = gs->frameNum + lifetime;
+
 	tdu.pos = pos;
 	tdu.rotation = rotation;
-	tdu.team = teamId;
-	tdu.drawBorder = drawBorder;
-	tdu.facing = facing;
-	std::pair<int, CUnitDrawer::TempDrawUnit> tp(gs->frameNum + lifetime, tdu);
 
-	if (transparent) {
-		unitDrawer->tempTransparentDrawUnits.insert(tp);
-	} else {
-		unitDrawer->tempDrawUnits.insert(tp);
-	}
+	tdu.drawAlpha = transparent;
+	tdu.drawBorder = drawBorder;
+
+	unitDrawer->AddTempDrawUnit(tdu);
 }
 
 
@@ -1356,9 +1364,6 @@ bool CAICallback::GetValue(int id, void *data)
 	switch (id) {
 		case AIVAL_NUMDAMAGETYPES:{
 			*((int*)data) = damageArrayHandler->GetNumTypes();
-			return true;
-		}case AIVAL_EXCEPTION_HANDLING:{
-			*(bool*)data = CEngineOutHandler::CatchExceptions();
 			return true;
 		}case AIVAL_MAP_CHECKSUM:{
 			*(unsigned int*)data = readMap->GetMapChecksum();

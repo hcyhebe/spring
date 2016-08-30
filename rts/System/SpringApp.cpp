@@ -28,8 +28,12 @@
 #include "Game/LoadScreen.h"
 #include "Net/GameServer.h"
 #include "Game/UI/KeyBindings.h"
+#include "Game/UI/KeyCodes.h"
 #include "Game/UI/MouseHandler.h"
+#include "Lua/LuaMenu.h"
 #include "Lua/LuaOpenGL.h"
+#include "Lua/LuaVFSDownload.h"
+#include "Menu/LuaMenuController.h"
 #include "Menu/SelectMenu.h"
 #include "Rendering/GlobalRendering.h"
 #include "Rendering/Fonts/glFont.h"
@@ -41,6 +45,7 @@
 #include "Sim/Misc/DefinitionTag.h"
 #include "Sim/Misc/GlobalConstants.h"
 #include "Sim/Misc/GlobalSynced.h"
+#include "Sim/Projectiles/ExplosionGenerator.h"
 #include "System/bitops.h"
 #include "System/Config/ConfigHandler.h"
 #include "System/Exceptions.h"
@@ -65,7 +70,6 @@
 #include "System/FileSystem/FileHandler.h"
 #include "System/FileSystem/FileSystem.h"
 #include "System/FileSystem/FileSystemInitializer.h"
-#include "System/FileSystem/VFSHandler.h"
 #include "System/Platform/Battery.h"
 #include "System/Platform/CmdLineParams.h"
 #include "System/Platform/Misc.h"
@@ -172,7 +176,6 @@ SpringApp::SpringApp(int argc, char** argv): cmdline(new CmdLineParams(argc, arg
 SpringApp::~SpringApp()
 {
 	spring_clock::PopTickRate();
-	creg::System::FreeClasses();
 }
 
 /**
@@ -230,8 +233,7 @@ bool SpringApp::Initialize()
 	CrashHandler::Install();
 	good_fpu_control_registers(__FUNCTION__);
 
-	// CREG & GlobalConfig
-	creg::System::InitializeClasses();
+	// GlobalConfig
 	GlobalConfig::Instantiate();
 
 
@@ -265,6 +267,8 @@ bool SpringApp::Initialize()
 	// GUIs
 	agui::InitGui();
 	LoadFonts();
+	keyCodes = new CKeyCodes();
+
 	CNamedTextures::Init();
 	LuaOpenGL::Init();
 	ISound::Initialize();
@@ -278,6 +282,7 @@ bool SpringApp::Initialize()
 	Threading::InitThreadPool();
 	Threading::SetThreadScheduler();
 	battery = new CBattery();
+	luavfsdownload = new LuaVFSDownload();
 
 	// Create CGameSetup and CPreGame objects
 	Startup();
@@ -403,7 +408,7 @@ bool SpringApp::CreateSDLWindow(const char* title)
 	streflop::streflop_init<streflop::Simple>();
 #endif
 
-#if defined(WIN32)
+#if defined(WIN32) && !defined _MSC_VER
 	_set_output_format(_TWO_DIGIT_EXPONENT);
 #endif
 
@@ -468,7 +473,6 @@ void SpringApp::GetDisplayGeometry()
 void SpringApp::SaveWindowPosition()
 {
 #ifndef HEADLESS
-	configHandler->Set("Fullscreen", globalRendering->fullScreen);
 	if (globalRendering->fullScreen) {
 		return;
 	}
@@ -569,6 +573,10 @@ void SpringApp::InitOpenGL()
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LEQUAL);
 
+	// FFP model lighting
+	glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 0.0f);
+	glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, 0);
+
 	// Clear Window
 	glClearColor(0.0f,0.0f,0.0f,0.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -626,7 +634,7 @@ static void ConsolePrintInitialize(const std::string& configSource, bool safemod
  */
 void SpringApp::ParseCmdLine(const std::string& binaryName)
 {
-	cmdline->SetUsageDescription("Usage: " + binaryName + " [options] [path_to_script.txt or demo.sdf]");
+	cmdline->SetUsageDescription("Usage: " + binaryName + " [options] [path_to_script.txt or demo.sdfz]");
 	cmdline->AddSwitch(0,   "sync-version",       "Display program sync version (for online gaming)");
 	cmdline->AddSwitch('f', "fullscreen",         "Run in fullscreen mode");
 	cmdline->AddSwitch('w', "window",             "Run in windowed mode");
@@ -654,6 +662,7 @@ void SpringApp::ParseCmdLine(const std::string& binaryName)
 	cmdline->AddString('d', "write-dir",          "Specify where Spring writes to.");
 	cmdline->AddString('g', "game",               "Specify the game that will be instantly loaded");
 	cmdline->AddString('m', "map",                "Specify the map that will be instantly loaded");
+	cmdline->AddString('e', "menu",               "Specify a lua menu archive to be used by spring");
 	cmdline->AddString('n', "name",               "Set your player name");
 	cmdline->AddSwitch(0,   "oldmenu",            "Start the old menu");
 
@@ -719,8 +728,12 @@ void SpringApp::ParseCmdLine(const std::string& binaryName)
 
 	// Runtime Tests
 	if (cmdline->IsSet("test-creg")) {
-		const int res = creg::RuntimeTest() ? EXIT_SUCCESS : EXIT_FAILURE;
-		exit(res);
+#ifdef USING_CREG
+		exit(creg::RuntimeTest() ? EXIT_SUCCESS : EXIT_FAILURE);
+#else
+		LOG_L(L_ERROR, "Creg is not enabled!\n");
+		exit(EXIT_FAILURE); //Do not fail tests
+#endif
 	}
 
 	const string configSource = (cmdline->IsSet("config") ? cmdline->GetString("config") : "");
@@ -762,9 +775,27 @@ void SpringApp::ParseCmdLine(const std::string& binaryName)
 }
 
 
+CGameController* SpringApp::LoadSaveFile(const std::string& saveFile)
+{
+	const std::string ext = FileSystem::GetExtension(saveFile);
+
+	if (ext != "ssf" && ext != "slsf")
+		throw content_error(std::string("Unknown save extension: ") + ext);
+
+	clientSetup->isHost = true;
+
+	pregame = new CPreGame(clientSetup);
+	pregame->LoadSavefile(saveFile, ext == "ssf");
+	return pregame;
+}
+
+
 CGameController* SpringApp::RunScript(const std::string& buf)
 {
 	clientSetup->LoadFromStartScript(buf);
+
+	if (!clientSetup->saveFile.empty())
+		return LoadSaveFile(clientSetup->saveFile);
 
 	// LoadFromStartScript overrides all values so reset cmdline defined ones
 	if (cmdline->IsSet("server")) {
@@ -776,9 +807,8 @@ CGameController* SpringApp::RunScript(const std::string& buf)
 
 	pregame = new CPreGame(clientSetup);
 
-	if (clientSetup->isHost) {
+	if (clientSetup->isHost)
 		pregame->LoadSetupscript(buf);
-	}
 
 	return pregame;
 }
@@ -805,7 +835,9 @@ void SpringApp::LoadSpringMenu()
 		defaultscript = "defaultstartscript.txt";
 	}
 
-	if (cmdline->IsSet("oldmenu") || defaultscript.empty()) {
+	if (luaMenuController->Valid()){
+		luaMenuController->Activate();
+	} else if (cmdline->IsSet("oldmenu") || defaultscript.empty()) {
 		// old menu
 	#ifdef HEADLESS
 		handleerror(NULL,
@@ -840,6 +872,8 @@ void SpringApp::Startup()
 	clientSetup->myPlayerName = configHandler->GetString("name");
 	clientSetup->SanityCheck();
 
+	luaMenuController = new CLuaMenuController(cmdline->GetString("menu"));
+
 	// no argument (either game is given or show selectmenu)
 	if (inputFile.empty()) {
 		clientSetup->isHost = true;
@@ -860,19 +894,15 @@ void SpringApp::Startup()
 
 		clientSetup->isHost = false;
 		pregame = new CPreGame(clientSetup);
-	} else if (extension == "sdf") {
-		// demo
+	} else if (inputFile.rfind(".sdfz") != std::string::npos) {
+		// demo.sdfz
 		clientSetup->isHost        = true;
 		clientSetup->myPlayerName += " (spec)";
 
 		pregame = new CPreGame(clientSetup);
 		pregame->LoadDemo(inputFile);
-	} else if (extension == "ssf") {
-		// savegame
-		clientSetup->isHost = true;
-
-		pregame = new CPreGame(clientSetup);
-		pregame->LoadSavefile(inputFile);
+	} else if (extension == "slsf" || extension == "ssf") {
+		LoadSaveFile(inputFile);
 	} else {
 		StartScript(inputFile);
 	}
@@ -900,6 +930,7 @@ void SpringApp::Reload(const std::string& script)
 	// PreGame allocates clientNet, so we need to delete our old connection
 	SafeDelete(clientNet);
 
+	SafeDelete(luavfsdownload);
 	SafeDelete(battery);
 
 	// note: technically we only need to use RemoveArchive
@@ -912,6 +943,9 @@ void SpringApp::Reload(const std::string& script)
 	LuaOpenGL::Free();
 	LuaOpenGL::Init();
 
+	// normally not needed, but would allow switching fonts
+	// LoadFonts();
+
 	// reload sounds.lua in case we switch to a different game
 	ISound::Shutdown();
 	ISound::Initialize();
@@ -920,12 +954,15 @@ void SpringApp::Reload(const std::string& script)
 	eventHandler.ResetState();
 
 	battery = new CBattery();
+	luavfsdownload = new LuaVFSDownload();
 
 	gu->ResetState();
 	gs->ResetState();
 
 	// must hold or we would loop forever
 	assert(!gu->globalReload);
+
+	luaMenuController->Reset();
 
 	if (script.empty()) {
 		// if no script, drop back to menu
@@ -983,7 +1020,9 @@ int SpringApp::Run()
 		input.PushEvents();
 
 		if (gu->globalReload) {
-			Reload(gameSetup->setupText);
+			std::string script = gu->reloadScript;
+			gu->reloadScript = "";
+			Reload(script);
 		} else {
 			if (!Update()) {
 				break;
@@ -1018,6 +1057,7 @@ void SpringApp::ShutDown()
 	LOG("[SpringApp::%s][1]", __FUNCTION__);
 	ThreadPool::SetThreadCount(0);
 	LOG("[SpringApp::%s][2]", __FUNCTION__);
+	SafeDelete(luavfsdownload);
 
 	if (game != nullptr) {
 		game->KillLua(); // must be called before `game` var gets nulled, else stuff in LuaSyncedRead.cpp will fail
@@ -1025,7 +1065,8 @@ void SpringApp::ShutDown()
 	SafeDelete(game);
 	SafeDelete(pregame);
 
-	agui::FreeGui();
+	CLuaMenu::FreeHandler();
+	SafeDelete(luaMenuController);
 
 	LOG("[SpringApp::%s][3]", __FUNCTION__);
 	SafeDelete(clientNet);
@@ -1038,9 +1079,12 @@ void SpringApp::ShutDown()
 	FreeJoystick();
 
 	LOG("[SpringApp::%s][5]", __FUNCTION__);
+	SafeDelete(keyCodes);
+	agui::FreeGui();
 	SafeDelete(font);
 	SafeDelete(smallFont);
-	CNamedTextures::Kill();
+
+	CNamedTextures::Kill(true);
 	GLContext::Free();
 	GlobalConfig::Deallocate();
 	UnloadExtensions();
@@ -1063,8 +1107,10 @@ void SpringApp::ShutDown()
 	SafeDelete(luaSocketRestrictions);
 
 	FileSystemInitializer::Cleanup();
+	DataDirLocater::FreeInstance();
 
 	LOG("[SpringApp::%s][8]", __FUNCTION__);
+	Watchdog::DeregisterThread(WDT_MAIN);
 	Watchdog::Uninstall();
 	LOG("[SpringApp::%s][9]", __FUNCTION__);
 }
@@ -1162,22 +1208,9 @@ bool SpringApp::MainEventHandler(const SDL_Event& event)
 			//FIXME don't known when this is called
 		} break;
 		case SDL_TEXTINPUT: {
-			if (!activeController) {
-				break;
-			}
-
-			std::string utf8Text = event.text.text;
-
-			const bool catched = eventHandler.TextInput(utf8Text);
-
-			if (activeController->userWriting && !catched){
-				auto ac = activeController;
-				if (ac->ignoreNextChar) {
-					utf8Text = utf8Text.substr(Utf8NextChar(utf8Text, 0));
-				}
-				ac->writingPos = Clamp<int>(ac->writingPos, 0, ac->userInput.length());
-				ac->userInput.insert(ac->writingPos, utf8Text);
-				ac->writingPos += utf8Text.length();
+			if (activeController) {
+				std::string utf8Text = event.text.text;
+				activeController->TextInput(utf8Text);
 			}
 		} break;
 		case SDL_KEYDOWN: {

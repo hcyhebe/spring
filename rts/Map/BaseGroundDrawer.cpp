@@ -20,8 +20,10 @@ CBaseGroundDrawer::CBaseGroundDrawer()
 	LODScaleRefraction = configHandler->GetFloat("GroundLODScaleRefraction");
 	LODScaleTerrainReflection = configHandler->GetFloat("GroundLODScaleTerrainReflection");
 
-	drawMapEdges = false;
+	drawForward = true;
 	drawDeferred = false;
+	drawMapEdges = false;
+
 	wireframe = false;
 	advShading = false;
 
@@ -57,12 +59,19 @@ CBaseGroundDrawer::~CBaseGroundDrawer()
 
 void CBaseGroundDrawer::DrawTrees(bool drawReflection) const
 {
+	glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_CURRENT_BIT);
+
 	glEnable(GL_ALPHA_TEST);
 	glAlphaFunc(GL_GREATER, 0.005f);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
 	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 	if (treeDrawer->drawTrees) {
+		// NOTE:
+		//   the info-texture now contains an alpha-component
+		//   so binding it here means trees will be invisible
+		//   when shadows are disabled
 		if (infoTextureHandler->IsEnabled()) {
 			glActiveTextureARB(GL_TEXTURE1_ARB);
 			glEnable(GL_TEXTURE_2D);
@@ -93,32 +102,6 @@ void CBaseGroundDrawer::DrawTrees(bool drawReflection) const
 		}
 	}
 
-	glDisable(GL_ALPHA_TEST);
-	glDisable(GL_BLEND);
+	glPopAttrib();
 }
 
-
-void CBaseGroundDrawer::UpdateCamRestraints(CCamera* cam)
-{
-	// add restraints for camera sides
-	cam->GetFrustumSides(readMap->GetCurrMinHeight() - 100.0f, readMap->GetCurrMaxHeight() + 30.0f,  SQUARE_SIZE);
-
-	// CAMERA DISTANCE IS ALREADY CHECKED IN CGroundDrawer::GridVisibility()!
-/*
-	// add restraint for maximum view distance (use flat z-dir as side)
-	// this is supposed to prevent (far) terrain from first being drawn
-	// and then immediately z-clipped away
-	const float3& camDir3D = cam->forward;
-
-	// prevent colinearity in top-down view
-	if (math::fabs(camDir3D.dot(UpVector)) < 0.95f) {
-		float3 camDir2D  = float3(camDir3D.x, 0.0f, camDir3D.z).SafeANormalize();
-		float3 camOffset = camDir2D * globalRendering->viewRange * 1.05f;
-
-		// FIXME magic constants
-		static const float miny = 0.0f;
-		static const float maxy = 255.0f / 3.5f;
-		cam->GetFrustumSide(camDir2D, camOffset, miny, maxy, SQUARE_SIZE, (camDir3D.y > 0.0f), false);
-	}
-*/
-}

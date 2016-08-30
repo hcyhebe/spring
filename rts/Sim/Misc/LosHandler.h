@@ -37,19 +37,23 @@
 struct SLosInstance
 {
 	SLosInstance(int id)
-		: allyteam(-1)
+		: id(id)
+		, allyteam(-1)
 		, radius(-1)
 		, basePos()
 		, baseHeight(-1)
 		, refCount(0)
 		, hashNum(-1)
 		, status(NONE)
-		, toBeDeleted(false)
-		, id(id)
+		, isCache(false)
+		, isQueuedForUpdate(false)
+		, isQueuedForTerraform(false)
 	{}
 	void Init(int radius, int allyteam, int2 basePos, float baseHeight, int hashNum);
 
+public:
 	// hash properties
+	int id;
 	int allyteam;
 	int radius;
 	int2 basePos;
@@ -58,7 +62,7 @@ struct SLosInstance
 	// working data
 	int refCount;
 	struct RLE { int start; unsigned length; };
-	static constexpr RLE EMPTY_RLE = {0,0};
+	static constexpr RLE EMPTY_RLE = RLE{0,0};
 	std::vector<RLE> squares;
 
 	// helpers
@@ -71,8 +75,10 @@ struct SLosInstance
 		REMOVE = 8,
 	};
 	int status;
-	bool toBeDeleted;
-	int id;
+
+	bool isCache;
+	bool isQueuedForUpdate;
+	bool isQueuedForTerraform;
 };
 
 
@@ -119,7 +125,6 @@ public:
 	};
 
 	ILosType(const int mipLevel, LosType type);
-	~ILosType();
 
 public:
 	void Update();
@@ -191,13 +196,12 @@ private:
 class CLosHandler : public CEventClient
 {
 	CR_DECLARE_STRUCT(CLosHandler)
+public:
 	CLosHandler();
 	~CLosHandler();
 
-public:
 	// the Interface
 	bool InLos(const CUnit* unit, int allyTeam) const;
-
 	bool InLos(const CWorldObject* obj, int allyTeam) const {
 		if (obj->alwaysVisible || globalLOS[allyTeam])
 			return true;
@@ -207,15 +211,22 @@ public:
 		// test visibility at two positions, mostly for long beam-projectiles
 		//   slow-moving objects will be visible no earlier or later than before on average
 		//   fast-moving objects will be visible at most one SU before they otherwise would
-		return (InLos(obj->pos, allyTeam) || InLos(obj->pos + obj->speed, allyTeam));
+		return (los.InSight(obj->pos, allyTeam) || los.InSight(obj->pos + obj->speed, allyTeam));
 	}
-
 	bool InLos(const float3 pos, int allyTeam) const {
 		if (globalLOS[allyTeam])
 			return true;
 		return los.InSight(pos, allyTeam);
 	}
 
+
+	bool InAirLos(const CUnit* unit, int allyTeam) const;
+	bool InAirLos(const CWorldObject* obj, int allyTeam) const {
+		if (obj->alwaysVisible || globalLOS[allyTeam])
+			return true;
+
+		return airLos.InSight(obj->pos, allyTeam);
+	}
 	bool InAirLos(const float3 pos, int allyTeam) const {
 		if (globalLOS[allyTeam])
 			return true;
@@ -253,19 +264,19 @@ public:
 
 public:
 	// CEventClient interface
-	bool WantsEvent(const std::string& eventName) {
-		return (eventName == "UnitDestroyed") || (eventName == "UnitNanoframed") || (eventName == "UnitTaken") || (eventName == "UnitLoaded");
+	bool WantsEvent(const std::string& eventName) override {
+		return (eventName == "UnitDestroyed") || (eventName == "UnitReverseBuilt") || (eventName == "UnitTaken") || (eventName == "UnitLoaded");
 	}
-	bool GetFullRead() const { return true; }
-	int  GetReadAllyTeam() const { return AllAccessTeam; }
+	bool GetFullRead() const override { return true; }
+	int  GetReadAllyTeam() const override { return AllAccessTeam; }
 
 	void UnitDestroyed(const CUnit* unit, const CUnit* attacker) override;
 	void UnitTaken(const CUnit* unit, int oldTeam, int newTeam) override;
 	void UnitLoaded(const CUnit* unit, const CUnit* transport) override;
-	void UnitNanoframed(const CUnit* unit) override;
+	void UnitReverseBuilt(const CUnit* unit) override;
 
 public:
-	void Update();
+	void Update() override;
 	void UpdateHeightMapSynced(SRectangle rect);
 
 public:
@@ -282,8 +293,8 @@ public:
 	ILosType radar;
 	ILosType sonar;
 	ILosType seismic;
-	ILosType commonJammer;
-	ILosType commonSonarJammer;
+	ILosType jammer;
+	ILosType sonarJammer;
 
 private:
 	static constexpr float defBaseRadarErrorSize = 96.0f;

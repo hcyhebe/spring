@@ -40,15 +40,21 @@ namespace CNamedTextures {
 		texWaiting.clear();
 	}
 
-	void Kill()
+	void Kill(bool shutdown)
 	{
+		TEXMAP tempMap;
+
 		const std::lock_guard<spring::recursive_mutex> lck(mutex);
 		for (auto it = texMap.cbegin(); it != texMap.cend(); ++it) {
-			const GLuint texID = it->second.id;
-			glDeleteTextures(1, &texID);
+			if (shutdown || !it->second.persist) {
+				const GLuint texID = it->second.id;
+				glDeleteTextures(1, &texID);
+			} else {
+				tempMap[it->first] = it->second;
+			}
 		}
 
-		texMap.clear();
+		std::swap(texMap, tempMap);
 		texWaiting.clear();
 	}
 
@@ -174,7 +180,7 @@ namespace CNamedTextures {
 
 				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8,
 							bitmap.xsize, bitmap.ysize, border ? 1 : 0,
-							GL_RGBA, GL_UNSIGNED_BYTE, bitmap.mem);
+							GL_RGBA, GL_UNSIGNED_BYTE, &bitmap.mem[0]);
 			} else {
 				//! MIPMAPPING (default)
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -184,11 +190,11 @@ namespace CNamedTextures {
 					GLEW_ARB_texture_non_power_of_two)
 				{
 					glBuildMipmaps(GL_TEXTURE_2D, GL_RGBA8, bitmap.xsize, bitmap.ysize,
-								GL_RGBA, GL_UNSIGNED_BYTE, bitmap.mem);
+								GL_RGBA, GL_UNSIGNED_BYTE, &bitmap.mem[0]);
 				} else {
 					//! glu auto resizes to next POT
 					gluBuild2DMipmaps(GL_TEXTURE_2D, GL_RGBA8, bitmap.xsize, bitmap.ysize,
-									GL_RGBA, GL_UNSIGNED_BYTE, bitmap.mem);
+									GL_RGBA, GL_UNSIGNED_BYTE, &bitmap.mem[0]);
 				}
 			}
 
@@ -287,14 +293,15 @@ namespace CNamedTextures {
 	}
 
 
-	const TexInfo* GetInfo(const std::string& texName, const bool forceLoad)
+	const TexInfo* GetInfo(const std::string& texName, bool forceLoad, bool persist)
 	{
 		if (texName.empty()) {
 			return NULL;
 		}
 
-		TEXMAP::const_iterator it = texMap.find(texName);
+		TEXMAP::iterator it = texMap.find(texName);
 		if (it != texMap.end()) {
+			it->second.persist |= persist;
 			return &it->second;
 		}
 
@@ -309,6 +316,7 @@ namespace CNamedTextures {
 
 				TexInfo texInfo;
 				texInfo.id = texID;
+				texInfo.persist = persist;
 				texMap[texName] = texInfo;
 
 				texWaiting.push_back(texName);

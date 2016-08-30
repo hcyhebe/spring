@@ -12,6 +12,7 @@
 #include "Rendering/Models/3DModel.h"
 #include "Sim/Features/Feature.h"
 #include "Sim/Features/FeatureDef.h"
+#include "Sim/Misc/BuildingMaskMap.h"
 #include "Sim/Misc/CollisionHandler.h"
 #include "Sim/Misc/CollisionVolume.h"
 #include "Sim/Misc/DamageArray.h"
@@ -50,23 +51,12 @@ CGameHelper* helper;
 
 CGameHelper::CGameHelper()
 {
-	stdExplosionGenerator = new CStdExplosionGenerator();
 	waitingDamageLists.resize(NUM_WAITING_DAMAGE_LISTS);
 }
 
 CGameHelper::~CGameHelper()
 {
-	for (unsigned int n = 0; n < waitingDamageLists.size(); ++n) {
-		std::list<WaitingDamage*>& wd = waitingDamageLists[n];
-
-		while (!wd.empty()) {
-			delete wd.back();
-			wd.pop_back();
-		}
-	}
-
 	waitingDamageLists.clear();
-	delete stdExplosionGenerator;
 }
 
 
@@ -85,7 +75,7 @@ float CGameHelper::CalcImpulseScale(const DamageArray& damages, const float expD
 	// DamageArray::operator* scales damage multipliers,
 	// not the impulse factor --> need to scale manually
 	// by it for impulse
-	const float impulseDmgMult = (damages.GetDefaultDamage() + damages.impulseBoost);
+	const float impulseDmgMult = (damages.GetDefault() + damages.impulseBoost);
 	const float rawImpulseScale = damages.impulseFactor * expDistanceMod * impulseDmgMult;
 
 	return Clamp(rawImpulseScale, -MAX_EXPLOSION_IMPULSE, MAX_EXPLOSION_IMPULSE);
@@ -108,14 +98,14 @@ void CGameHelper::DoExplosionDamage(
 	if (ignoreOwner && (unit == owner))
 		return;
 
-	const LocalModelPiece* lap = unit->GetLastAttackedPiece(gs->frameNum);
-	const CollisionVolume* vol = unit->GetCollisionVolume(lap);
+	const LocalModelPiece* lhp = unit->GetLastHitPiece(gs->frameNum);
+	const CollisionVolume* vol = unit->GetCollisionVolume(lhp);
 
-	const float3& lapPos = (lap != NULL && vol == lap->GetCollisionVolume())? lap->GetAbsolutePos(): ZeroVector;
-	const float3& volPos = vol->GetWorldSpacePos(unit, lapPos);
+	const float3& lhpPos = (lhp != NULL && vol == lhp->GetCollisionVolume())? lhp->GetAbsolutePos(): ZeroVector;
+	const float3& volPos = vol->GetWorldSpacePos(unit, lhpPos);
 
 	// linear damage falloff with distance
-	const float expDist = (expRadius != 0.0f) ? vol->GetPointSurfaceDistance(unit, lap, expPos) : 0.0f;
+	const float expDist = (expRadius != 0.0f) ? vol->GetPointSurfaceDistance(unit, lhp, expPos) : 0.0f;
 	const float expRim = expDist * expEdgeEffect;
 
 	// return early if (distance > radius)
@@ -147,8 +137,7 @@ void CGameHelper::DoExplosionDamage(
 		unit->DoDamage(expDamages, expImpulse, owner, weaponDefID, projectileID);
 	} else {
 		// damage later
-		WaitingDamage* wd = new WaitingDamage((owner? owner->id: -1), unit->id, expDamages, expImpulse, weaponDefID, projectileID);
-		waitingDamageLists[(gs->frameNum + int(expDist / expSpeed) - 3) & 127].push_front(wd);
+		waitingDamageLists[(gs->frameNum + int(expDist / expSpeed) - 3) & 127].emplace_back((owner? owner->id: -1), unit->id, expDamages, expImpulse, weaponDefID, projectileID);
 	}
 }
 
@@ -164,8 +153,11 @@ void CGameHelper::DoExplosionDamage(
 ) {
 	assert(feature != NULL);
 
-	const CollisionVolume* vol = feature->GetCollisionVolume(NULL);
-	const float3& volPos = vol->GetWorldSpacePos(feature, ZeroVector);
+	const LocalModelPiece* lhp = feature->GetLastHitPiece(gs->frameNum);
+	const CollisionVolume* vol = feature->GetCollisionVolume(lhp);
+
+	const float3& lhpPos = (lhp != NULL && vol == lhp->GetCollisionVolume())? lhp->GetAbsolutePos(): ZeroVector;
+	const float3& volPos = vol->GetWorldSpacePos(feature, lhpPos);
 
 	const float expDist = (expRadius != 0.0f) ? vol->GetPointSurfaceDistance(feature, NULL, expPos) : 0.0f;
 	const float expRim = expDist * expEdgeEffect;
@@ -187,25 +179,20 @@ void CGameHelper::DoExplosionDamage(
 
 
 void CGameHelper::DamageObjectsInExplosionRadius(
-	const ExplosionParams& params,
+	const CExplosionParams& params,
 	const float expRad,
 	const int weaponDefID
 ) {
-	static ObjectCache cache;
+	static std::vector<CUnit*> unitCache;
+	static std::vector<CFeature*> featureCache;
 
-	if (cache.Empty())
-		cache.Init(unitHandler->MaxUnits(), unitHandler->MaxUnits());
+	const unsigned int oldNumUnits = unitCache.size();
+	const unsigned int oldNumFeatures = featureCache.size();
 
-	std::vector<CUnit*>& units = cache.GetUnits();
-	std::vector<CFeature*>& features = cache.GetFeatures();
+	quadField->GetUnitsAndFeaturesColVol(params.pos, expRad, unitCache, featureCache);
 
-	const unsigned int oldNumUnits = *(cache.GetNumUnitsPtr());
-	const unsigned int oldNumFeatures = *(cache.GetNumFeaturesPtr());
-
-	quadField->GetUnitsAndFeaturesColVol(params.pos, expRad, units, features, cache.GetNumUnitsPtr(), cache.GetNumFeaturesPtr());
-
-	const unsigned int newNumUnits = *(cache.GetNumUnitsPtr());
-	const unsigned int newNumFeatures = *(cache.GetNumFeaturesPtr());
+	const unsigned int newNumUnits = unitCache.size();
+	const unsigned int newNumFeatures = featureCache.size();
 
 	// damage all units within the explosion radius
 	// NOTE:
@@ -213,19 +200,19 @@ void CGameHelper::DamageObjectsInExplosionRadius(
 	//   which would overwrite our object cache if we did
 	//   not keep track of end-markers --> certain objects
 	//   would not be damaged AT ALL (!)
-	for (unsigned int n = oldNumUnits; n < newNumUnits; n++) {
-		DoExplosionDamage(units[n], params.owner, params.pos, expRad, params.explosionSpeed, params.edgeEffectiveness, params.ignoreOwner, params.damages, weaponDefID, params.projectileID);
-	}
+	for (unsigned int n = oldNumUnits; n < newNumUnits; n++)
+		DoExplosionDamage(unitCache[n], params.owner, params.pos, expRad, params.explosionSpeed, params.edgeEffectiveness, params.ignoreOwner, params.damages, weaponDefID, params.projectileID);
+
+	unitCache.resize(oldNumUnits);
 
 	// damage all features within the explosion radius
-	for (unsigned int n = oldNumFeatures; n < newNumFeatures; n++) {
-		DoExplosionDamage(features[n], params.owner, params.pos, expRad, params.edgeEffectiveness, params.damages, weaponDefID, params.projectileID);
-	}
+	for (unsigned int n = oldNumFeatures; n < newNumFeatures; n++)
+		DoExplosionDamage(featureCache[n], params.owner, params.pos, expRad, params.edgeEffectiveness, params.damages, weaponDefID, params.projectileID);
 
-	cache.Reset(oldNumUnits, oldNumFeatures);
+	featureCache.resize(oldNumFeatures);
 }
 
-void CGameHelper::Explosion(const ExplosionParams& params) {
+void CGameHelper::Explosion(const CExplosionParams& params) {
 	const DamageArray& damages = params.damages;
 
 	// if weaponDef is NULL, this is a piece-explosion
@@ -287,7 +274,7 @@ void CGameHelper::Explosion(const ExplosionParams& params) {
 		if (altitude >= -1.0f) {
 			if (params.damageGround && !mapDamage->disabled && (craterAOE > altitude) && (damages.craterMult > 0.0f)) {
 				// limit the depth somewhat
-				const float craterDepth = damages.GetDefaultDamage() * (1.0f - (altitude / craterAOE));
+				const float craterDepth = damages.GetDefault() * (1.0f - (altitude / craterAOE));
 				const float damageDepth = std::min(craterAOE * 10.0f, craterDepth);
 				const float craterStrength = (damageDepth + damages.craterBoost) * damages.craterMult;
 				const float craterRadius = craterAOE - altitude;
@@ -302,7 +289,7 @@ void CGameHelper::Explosion(const ExplosionParams& params) {
 			explosionID,
 			params.pos,
 			params.dir,
-			damages.GetDefaultDamage(),
+			damages.GetDefault(),
 			damageAOE,
 			params.gfxMod,
 			params.owner,
@@ -310,8 +297,7 @@ void CGameHelper::Explosion(const ExplosionParams& params) {
 		);
 	}
 
-	CExplosionEvent explosionEvent(params.pos, damages.GetDefaultDamage(), damageAOE, weaponDef);
-	CExplosionCreator::FireExplosionEvent(explosionEvent);
+	CExplosionCreator::FireExplosionEvent(params);
 
 	if (weaponDef != NULL) {
 		const GuiSoundSet& soundSet = weaponDef->hitSound;
@@ -354,21 +340,25 @@ template<typename TFilter, typename TQuery>
 static inline void QueryUnits(TFilter filter, TQuery& query)
 {
 	const auto& quads = quadField->GetQuads(query.pos, query.radius);
-	const int tempNum = gs->tempNum++;
+	const int tempNum = gs->GetTempNum();
 
 	for (int t = 0; t < teamHandler->ActiveAllyTeams(); ++t) { //FIXME
-		if (!filter.Team(t)) {
+		if (!filter.Team(t))
 			continue;
-		}
+
 		for (const int qi: quads) {
-			const std::vector<CUnit*>& allyTeamUnits = quadField->GetQuad(qi).teamUnits[t];
+			const auto& allyTeamUnits = quadField->GetQuad(qi).teamUnits[t];
+
 			for (CUnit* u: allyTeamUnits) {
-				if (u->tempNum != tempNum) {
-					u->tempNum = tempNum;
-					if (filter.Unit(u)) {
-						query.AddUnit(u);
-					}
-				}
+				if (u->tempNum == tempNum)
+					continue;
+
+				u->tempNum = tempNum;
+
+				if (!filter.Unit(u))
+					continue;
+
+				query.AddUnit(u);
 			}
 		}
 	}
@@ -569,7 +559,7 @@ namespace {
 				const float dist = pos.distance(u->midPos) - u->radius;
 
 				if (dist <= closeDist &&
-					(canBeBlind || ((u->losRadius * losHandler->los.divisor) > dist))
+					(canBeBlind || (u->losRadius > dist))
 				) {
 					closeDist = dist;
 					closeUnit = u;
@@ -596,7 +586,7 @@ namespace {
 				const float sqDist = (pos - u->midPos).SqLength2D();
 
 				if (sqDist <= closeSqDist &&
-					(canBeBlind || Square(u->losRadius * losHandler->los.divisor) > sqDist)
+					(canBeBlind || Square(u->losRadius) > sqDist)
 				) {
 					closeSqDist = sqDist;
 					closeUnit = u;
@@ -626,10 +616,6 @@ namespace {
 	} // end of namespace Query
 } // end of namespace
 
-// Use this instead of unit->tempNum here, because it requires a mutex lock that will deadlock if luaRules is invoked simultaneously.
-// Not the cleanest solution, but faster than e.g. a std::set, and this function is called quite frequently.
-static int tempTargetUnits[MAX_UNITS] = {0};
-static int targetTempNum = 2;
 
 void CGameHelper::GenerateWeaponTargets(const CWeapon* weapon, const CUnit* avoidUnit, std::multimap<float, CUnit*>& targets)
 {
@@ -643,34 +629,33 @@ void CGameHelper::GenerateWeaponTargets(const CWeapon* weapon, const CUnit* avoi
 	const float heightMod = weaponDef->heightmod;
 
 	// how much damage the weapon deals over 1 second
-	const float secDamage = weaponDef->damages.GetDefaultDamage() * weapon->salvoSize / weapon->reloadTime * GAME_SPEED;
-	const bool paralyzer  = (weaponDef->damages.paralyzeDamageTime != 0);
+	const float secDamage = weapon->damages->GetDefault() * weapon->salvoSize / weapon->reloadTime * GAME_SPEED;
+	const bool paralyzer  = (weapon->damages->paralyzeDamageTime != 0);
 
-	const auto& quads = quadField->GetQuads(pos, radius + (aHeight - std::max(0.0f, readMap->GetInitMinHeight())) * heightMod);
-	const int tempNum = targetTempNum++;
+	// copy on purpose since the below calls lua
+	const std::vector<int> quads = quadField->GetQuads(pos, radius + (aHeight - std::max(0.0f, readMap->GetInitMinHeight())) * heightMod);
+	const int tempNum = gs->GetTempNum();
 
 	for (int t = 0; t < teamHandler->ActiveAllyTeams(); ++t) {
-		if (teamHandler->Ally(owner->allyteam, t)) {
+		if (teamHandler->Ally(owner->allyteam, t))
 			continue;
-		}
+
 		for (const int qi: quads) {
 			const std::vector<CUnit*>& allyTeamUnits = quadField->GetQuad(qi).teamUnits[t];
 
 			for (CUnit* targetUnit: allyTeamUnits) {
+				if (targetUnit->tempNum == tempNum)
+					continue;
+
+				targetUnit->tempNum = tempNum;
+
 				float targetPriority = 1.0f;
 
-				if (tempTargetUnits[targetUnit->id] == tempNum) {
+				if (!weapon->TestTarget(float3(), SWeaponTarget(targetUnit)))
 					continue;
-				}
-				tempTargetUnits[targetUnit->id] = tempNum;
 
-				if (!weapon->TestTarget(float3(), SWeaponTarget(targetUnit))) {
-					continue;
-				}
-
-				if (targetUnit == avoidUnit) {
+				if (targetUnit == avoidUnit)
 					targetPriority *= 10.0f;
-				}
 
 				float3 targPos;
 				const unsigned short targetLOSState = targetUnit->losStatus[owner->allyteam];
@@ -686,26 +671,24 @@ void CGameHelper::GenerateWeaponTargets(const CWeapon* weapon, const CUnit* avoi
 
 				const float modRange = radius + (aHeight - targPos.y) * heightMod;
 
-				if (pos.SqDistance2D(targPos) > modRange * modRange) {
+				if (pos.SqDistance2D(targPos) > modRange * modRange)
 					continue;
-				}
 
 				const float dist2D = (pos - targPos).Length2D();
 				const float rangeMul = (dist2D * weaponDef->proximityPriority + modRange * 0.4f + 100.0f);
-				const float damageMul = weaponDef->damages[targetUnit->armorType] * targetUnit->curArmorMultiple;
+				const float damageMul = weapon->damages->Get(targetUnit->armorType) * targetUnit->curArmorMultiple;
 
 				targetPriority *= rangeMul;
 
 				if (targetLOSState & LOS_INLOS) {
 					targetPriority *= (secDamage + targetUnit->health);
 
-					if (paralyzer && targetUnit->paralyzeDamage > (modInfo.paralyzeOnMaxHealth? targetUnit->maxHealth: targetUnit->health)) {
+					if (paralyzer && targetUnit->paralyzeDamage > (modInfo.paralyzeOnMaxHealth? targetUnit->maxHealth: targetUnit->health))
 						targetPriority *= 4.0f;
-					}
 
-					if (weapon->hasTargetWeight) {
+					if (weapon->hasTargetWeight)
 						targetPriority *= weapon->TargetWeight(targetUnit);
-					}
+
 				} else {
 					targetPriority *= (secDamage + 10000.0f);
 				}
@@ -713,20 +696,22 @@ void CGameHelper::GenerateWeaponTargets(const CWeapon* weapon, const CUnit* avoi
 				if (targetLOSState & LOS_PREVLOS) {
 					targetPriority /= (damageMul * targetUnit->power * (0.7f + gs->randFloat() * 0.6f));
 
-					if (targetUnit->category & weapon->badTargetCategory) {
+					if (targetUnit->category & weapon->badTargetCategory)
 						targetPriority *= 100.0f;
-					}
-					if (targetUnit->IsCrashing()) {
+
+					if (targetUnit->IsCrashing())
 						targetPriority *= 1000.0f;
-					}
-					if (targetUnit == lastAttacker) {
+
+					if (targetUnit == lastAttacker)
 						targetPriority *= 0.5f;
-					}
 				}
 
-				if (!eventHandler.AllowWeaponTarget(owner->id, targetUnit->id, weapon->weaponNum, weaponDef->id, &targetPriority)) {
+				const bool allow = eventHandler.AllowWeaponTarget(owner->id, targetUnit->id, weapon->weaponNum, weaponDef->id, &targetPriority);
+				//Lua call may have changed tempNum, so needs to be set again.
+				targetUnit->tempNum = tempNum;
+
+				if (!allow)
 					continue;
-				}
 
 				targets.insert(std::pair<float, CUnit*>(targetPriority, targetUnit));
 			}
@@ -820,7 +805,8 @@ void CGameHelper::GetEnemyUnitsNoLosTest(const float3& pos, float searchRadius, 
 
 void CGameHelper::BuggerOff(float3 pos, float radius, bool spherical, bool forced, int teamId, CUnit* excludeUnit)
 {
-	const std::vector<CUnit*> &units = quadField->GetUnitsExact(pos, radius + SQUARE_SIZE, spherical);
+	//copy on purpose since BuggerOff can call risky stuff
+	const std::vector<CUnit*> units = quadField->GetUnitsExact(pos, radius + SQUARE_SIZE, spherical);
 	const int allyTeamId = teamHandler->AllyTeam(teamId);
 
 	for (std::vector<CUnit*>::const_iterator ui = units.begin(); ui != units.end(); ++ui) {
@@ -885,7 +871,7 @@ static const vector<SearchOffset>& GetSearchOffsetTable (int radius)
 				i.qdist = i.dx*i.dx + i.dy*i.dy;
 			}
 
-		std::sort(searchOffsets.begin(), searchOffsets.end(), SearchOffsetComparator);
+		std::stable_sort(searchOffsets.begin(), searchOffsets.end(), SearchOffsetComparator);
 	}
 
 	return searchOffsets;
@@ -1103,7 +1089,7 @@ CGameHelper::BuildSquareStatus CGameHelper::TestUnitBuildSquare(
 		for (int z = z1; z < z2; z++) {
 			for (int x = x1; x < x2; x++) {
 				const float3 bpos(x * SQUARE_SIZE, buildHeight, z * SQUARE_SIZE);
-				BuildSquareStatus tbs = (bpos.IsInBounds()) ? TestBuildSquare(bpos, xrange, zrange, buildInfo.def, moveDef, feature, gu->myAllyTeam, synced) : BUILDSQUARE_BLOCKED;
+				BuildSquareStatus tbs = (bpos.IsInBounds()) ? TestBuildSquare(bpos, xrange, zrange, buildInfo.def, moveDef, feature, gu->myAllyTeam, buildInfo.def->buildingMask, synced) : BUILDSQUARE_BLOCKED;
 
 				if (tbs != BUILDSQUARE_BLOCKED) {
 					// test if build-position overlaps a queued command
@@ -1141,7 +1127,7 @@ CGameHelper::BuildSquareStatus CGameHelper::TestUnitBuildSquare(
 		// this can be called in either context
 		for (int z = z1; z < z2; z++) {
 			for (int x = x1; x < x2; x++) {
-				canBuild = std::min(canBuild, TestBuildSquare(float3(x * SQUARE_SIZE, buildHeight, z * SQUARE_SIZE), xrange, zrange, buildInfo.def, moveDef, feature, allyteam, synced));
+				canBuild = std::min(canBuild, TestBuildSquare(float3(x * SQUARE_SIZE, buildHeight, z * SQUARE_SIZE), xrange, zrange, buildInfo.def, moveDef, feature, allyteam, buildInfo.def->buildingMask, synced));
 
 				if (canBuild == BUILDSQUARE_BLOCKED) {
 					return BUILDSQUARE_BLOCKED;
@@ -1161,6 +1147,7 @@ CGameHelper::BuildSquareStatus CGameHelper::TestBuildSquare(
 	const MoveDef* moveDef,
 	CFeature*& feature,
 	int allyteam,
+	boost::uint16_t mask,
 	bool synced
 ) {
 	assert(pos.IsInBounds());
@@ -1171,6 +1158,10 @@ CGameHelper::BuildSquareStatus CGameHelper::TestBuildSquare(
 
 	if (!unitDef->CheckTerrainConstraints(moveDef, groundHeight))
 		return BUILDSQUARE_BLOCKED;
+
+	if (!buildingMaskMap->TestTileMaskUnsafe(sqx >> 1, sqz >> 1, mask))
+		return BUILDSQUARE_BLOCKED;
+
 
 	// check maxHeightDif constraint (structures only)
 	//
@@ -1294,18 +1285,17 @@ Command CGameHelper::GetBuildCommand(const float3& pos, const float3& dir) {
 
 void CGameHelper::Update()
 {
-	std::list<WaitingDamage*>& wdList = waitingDamageLists[gs->frameNum & 127];
+	std::vector<WaitingDamage>& wdList = waitingDamageLists[gs->frameNum & 127];
 
-	while (!wdList.empty()) {
-		WaitingDamage* wd = wdList.back();
-		wdList.pop_back();
+	for (const WaitingDamage& wd: wdList) {
+		CUnit* attackee = unitHandler->GetUnit(wd.target);
+		CUnit* attacker = unitHandler->GetUnit(wd.attacker); // null if wd.attacker is -1
 
-		CUnit* attackee = unitHandler->units[wd->target];
-		CUnit* attacker = (wd->attacker == -1)? NULL: unitHandler->units[wd->attacker];
-
-		if (attackee != NULL)
-			attackee->DoDamage(wd->damage, wd->impulse, attacker, wd->weaponID, wd->projectileID);
-
-		delete wd;
+		if (attackee != nullptr) {
+			attackee->DoDamage(wd.damage, wd.impulse, attacker, wd.weaponID, wd.projectileID);
+		}
 	}
+
+	wdList.clear();
 }
+

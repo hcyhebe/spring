@@ -11,6 +11,7 @@
 #include "Map/ReadMap.h"
 #include "System/myMath.h"
 #include "Sim/Features/Feature.h"
+#include "Sim/Features/FeatureDef.h"
 #include "Sim/Features/FeatureHandler.h"
 #include "Sim/Misc/GroundBlockingObjectMap.h"
 #include "Sim/Misc/ModInfo.h"
@@ -55,8 +56,7 @@ CR_REG_METADATA(CBuilder, (
 	CR_MEMBER(terraformCenter),
 	CR_MEMBER(terraformRadius),
 	CR_MEMBER(terraformType),
-	CR_MEMBER(nanoPieceCache),
-	CR_POSTLOAD(PostLoad)
+	CR_MEMBER(nanoPieceCache)
 ))
 
 
@@ -96,16 +96,6 @@ CBuilder::CBuilder():
 
 CBuilder::~CBuilder()
 {
-}
-
-void CBuilder::PostLoad()
-{
-	if (curResurrect)  ScriptStartBuilding(curResurrect->pos, false);
-	if (curBuild)      ScriptStartBuilding(curBuild->pos, false);
-	if (curCapture)    ScriptStartBuilding(curCapture->pos, false);
-	if (curReclaim)    ScriptStartBuilding(curReclaim->pos, false);
-	if (terraforming)  ScriptStartBuilding(terraformCenter, false);
-	if (helpTerraform) ScriptStartBuilding(helpTerraform->terraformCenter, false);
 }
 
 
@@ -381,7 +371,7 @@ void CBuilder::Update()
 						}
 
 						if (curResurrect->resurrectProgress >= 1.0f) {
-							if (curResurrect->tempNum != (gs->tempNum - 1)) {
+							if (!curResurrect->deleteMe) {
 								// resurrect finished and we are the first
 								curResurrect->UnBlock();
 
@@ -423,12 +413,6 @@ void CBuilder::Update()
 									// (WTF!)
 									c.params[0] = INT_MAX / 2;
 								}
-
-								// prevent double/triple/... resurrection if more than one
-								// builder is resurrecting (such that resurrectProgress can
-								// possibly become >= 1 again *this* simframe)
-								curResurrect->resurrectProgress = 0.0f;
-								curResurrect->tempNum = gs->tempNum++;
 
 								// this takes one simframe to do the deletion
 								featureHandler->DeleteFeature(curResurrect);
@@ -585,10 +569,10 @@ void CBuilder::StartRestore(float3 centerPos, float radius)
 	StopBuild(false);
 	TempHoldFire(CMD_RESTORE);
 
-	terraforming=true;
-	terraformType=Terraform_Restore;
-	terraformCenter=centerPos;
-	terraformRadius=radius;
+	terraforming = true;
+	terraformType = Terraform_Restore;
+	terraformCenter = centerPos;
+	terraformRadius = radius;
 
 	tx1 = (int)max((float)0,(centerPos.x-radius)/SQUARE_SIZE);
 	tx2 = (int)min((float)mapDims.mapx,(centerPos.x+radius)/SQUARE_SIZE);
@@ -629,6 +613,7 @@ void CBuilder::StopBuild(bool callScript)
 	helpTerraform = 0;
 	curResurrect = 0;
 	curCapture = 0;
+
 	terraforming = false;
 
 	if (callScript)
@@ -835,10 +820,10 @@ void CBuilder::CreateNanoParticle(const float3& goal, float radius, bool inverse
 {
 	const int modelNanoPiece = nanoPieceCache.GetNanoPiece(script);
 
-	if (localModel == NULL || !localModel->HasPiece(modelNanoPiece))
+	if (!localModel.Initialized() || !localModel.HasPiece(modelNanoPiece))
 		return;
 
-	const float3 relNanoFirePos = localModel->GetRawPiecePos(modelNanoPiece);
+	const float3 relNanoFirePos = localModel.GetRawPiecePos(modelNanoPiece);
 	const float3 nanoPos = this->GetObjectSpacePos(relNanoFirePos);
 
 	// unsynced

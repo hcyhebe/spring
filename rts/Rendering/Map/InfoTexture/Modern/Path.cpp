@@ -10,6 +10,7 @@
 #include "Sim/MoveTypes/MoveMath/MoveMath.h"
 #include "Sim/MoveTypes/MoveDefHandler.h"
 #include "Sim/Units/BuildInfo.h"
+#include "Sim/Units/CommandAI/CommandDescription.h"
 #include "Sim/Units/UnitDef.h"
 #include "Sim/Units/UnitDefHandler.h"
 #include "System/Color.h"
@@ -176,8 +177,9 @@ bool CPathTexture::IsUpdateNeeded()
 	}
 
 	// nothing selected nor any build cmd active -> don't update
-	if (lastSelectedPathType == 0 && isCleared)
+	if (lastSelectedPathType == 0 && isCleared) {
 		return false;
+	}
 
 	return true;
 }

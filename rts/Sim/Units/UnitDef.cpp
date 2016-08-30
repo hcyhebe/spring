@@ -64,7 +64,8 @@ UnitDefWeapon::UnitDefWeapon(const WeaponDef* weaponDef, const LuaTable& weaponT
 /******************************************************************************/
 
 UnitDef::UnitDef()
-	: cobID(-1)
+	: SolidObjectDef()
+	, cobID(-1)
 	, decoyDef(NULL)
 	, techLevel(-1)
 	, metalUpkeep(0.0f)
@@ -565,7 +566,7 @@ UnitDef::UnitDef(const LuaTable& udTable, const std::string& unitName, int id)
 
 
 	modelName = udTable.GetString("objectName", "");
-	scriptName = udTable.GetString("script", unitName + ".cob");
+	scriptName = "scripts/" + udTable.GetString("script", unitName + ".cob");
 
 	deathExpWeaponDef = weaponDefHandler->GetWeaponDef(udTable.GetString("explodeAs", ""));
 	selfdExpWeaponDef = weaponDefHandler->GetWeaponDef(udTable.GetString("selfDestructAs", udTable.GetString("explodeAs", "")));
@@ -597,6 +598,7 @@ UnitDef::UnitDef(const LuaTable& udTable, const std::string& unitName, int id)
 	xsize = std::max(1 * SPRING_FOOTPRINT_SCALE, (udTable.GetInt("footprintX", 1) * SPRING_FOOTPRINT_SCALE));
 	zsize = std::max(1 * SPRING_FOOTPRINT_SCALE, (udTable.GetInt("footprintZ", 1) * SPRING_FOOTPRINT_SCALE));
 
+	buildingMask = (boost::uint16_t)udTable.GetInt("buildingMask", 1); //1st bit set to 1 constitutes for "normal building"
 	if (IsImmobileUnit()) {
 		CreateYardMap(udTable.GetString("yardMap", ""));
 	}
@@ -658,10 +660,9 @@ UnitDef::UnitDef(const LuaTable& udTable, const std::string& unitName, int id)
 
 UnitDef::~UnitDef()
 {
-	if (buildPic) {
+	if (buildPic != nullptr) {
 		buildPic->Free();
-		delete buildPic;
-		buildPic = NULL;
+		SafeDelete(buildPic);
 	}
 }
 

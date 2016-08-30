@@ -187,7 +187,7 @@ Can either be a:
 
 - Spring URL (spring://[username[:password]@]host[:port])
 - start script (often named script.txt)
-- replay file (*.sdf)
+- replay file (*.sdfz)
 - save game (*.ssf)
 
 Portable Mode
@@ -296,7 +296,7 @@ ifndef::DEDICATED[spring-dedicated(6)]
 Homepage
 --------
 More information about Spring can be found at
-link: http://springrts.com
+link: https://springrts.com
 
 Author
 ------

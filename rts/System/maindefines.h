@@ -38,9 +38,13 @@
   but support for it has not yet spread wide enough.
 */
 #if defined __arch64__
-#define __SIZE_T_PRINTF_FORMAT__ "%lu"
+	#if defined _WIN64
+		#define __SIZE_T_PRINTF_FORMAT__ "%I64u"
+	#else
+		#define __SIZE_T_PRINTF_FORMAT__ "%lu"
+	#endif
 #else
-#define __SIZE_T_PRINTF_FORMAT__ "%u"
+	#define __SIZE_T_PRINTF_FORMAT__ "%u"
 #endif
 /* a shorter form */
 #define _STPF_ __SIZE_T_PRINTF_FORMAT__
@@ -90,7 +94,7 @@
 	#define STRCASECMP strcasecmp
 #endif /* _MSC_VER */
 
-#define FREE(x) free(x); x = NULL;
+#define FREE(x) do { free(x); x = NULL; } while(false);
 
 /* define a platform independent path separator C-string and char */
 #ifndef sPS

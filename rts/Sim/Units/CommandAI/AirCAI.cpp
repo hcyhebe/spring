@@ -44,8 +44,7 @@ CR_REG_METADATA(CAirCAI, (
 	CR_MEMBER(targetAge),
 
 	CR_MEMBER(lastPC1),
-	CR_MEMBER(lastPC2),
-	CR_RESERVED(16)
+	CR_MEMBER(lastPC2)
 ))
 
 CAirCAI::CAirCAI()
@@ -64,20 +63,21 @@ CAirCAI::CAirCAI(CUnit* owner)
 	, lastPC2(-1)
 {
 	cancelDistance = 16000;
-	CommandDescription c;
 
 	if (owner->unitDef->canAttack) {
-		c.id = CMD_AREA_ATTACK;
-		c.action = "areaattack";
+		SCommandDescription c;
+
+		c.id   = CMD_AREA_ATTACK;
 		c.type = CMDTYPE_ICON_AREA;
-		c.name = "Area attack";
+
+		c.action    = "areaattack";
+		c.name      = "Area attack";
+		c.tooltip   = c.name + ": Sets the aircraft to attack enemy units within a circle";
 		c.mouseicon = c.name;
-		c.tooltip = "Sets the aircraft to attack enemy units within a circle";
-		possibleCommands.push_back(c);
+		possibleCommands.push_back(commandDescriptionCache->GetPtr(c));
 	}
 
 	basePos = owner->pos;
-	goalPos = owner->pos;
 }
 
 void CAirCAI::GiveCommandReal(const Command& c, bool fromSynced)
@@ -113,10 +113,10 @@ void CAirCAI::GiveCommandReal(const Command& c, bool fromSynced)
 			}
 
 			for (unsigned int n = 0; n < possibleCommands.size(); n++) {
-				if (possibleCommands[n].id != CMD_AUTOREPAIRLEVEL)
+				if (possibleCommands[n]->id != CMD_AUTOREPAIRLEVEL)
 					continue;
 
-				possibleCommands[n].params[0] = IntToString(int(c.params[0]), "%d");
+				UpdateCommandDescription(n, c);
 				break;
 			}
 
@@ -135,10 +135,10 @@ void CAirCAI::GiveCommandReal(const Command& c, bool fromSynced)
 			}
 
 			for (unsigned int n = 0; n < possibleCommands.size(); n++) {
-				if (possibleCommands[n].id != CMD_IDLEMODE)
+				if (possibleCommands[n]->id != CMD_IDLEMODE)
 					continue;
 
-				possibleCommands[n].params[0] = IntToString(int(c.params[0]), "%d");
+				UpdateCommandDescription(n, c);
 				break;
 			}
 
@@ -171,7 +171,7 @@ void CAirCAI::SlowUpdate()
 		return;
 
 	if (!commandQue.empty() && (commandQue.front().timeOut < gs->frameNum)) {
-		FinishCommand();
+		StopMoveAndFinishCommand();
 		return;
 	}
 
@@ -200,12 +200,6 @@ void CAirCAI::SlowUpdate()
 			StopMove();
 		}
 		return;
-	}
-
-	if (c.GetID() != CMD_STOP && c.GetID() != CMD_AUTOREPAIRLEVEL &&
-		c.GetID() != CMD_IDLEMODE && c.GetID() != CMD_SET_WANTED_MAX_SPEED)
-	{
-		myPlane->Takeoff();
 	}
 
 	switch (c.GetID()) {
@@ -262,6 +256,24 @@ bool CAirCAI::AirAutoGenerateTarget(AAirMoveType* myPlane) {
 }
 
 
+void CAirCAI::ExecuteMove(Command& c)
+{
+	float3 cmdPos = c.GetPos(0);
+
+	AAirMoveType* myPlane = GetStrafeAirMoveType(owner);
+	SetGoal(cmdPos, owner->pos);
+
+	const CStrafeAirMoveType* airMT = (!owner->UsingScriptMoveType())? static_cast<const CStrafeAirMoveType*>(myPlane): NULL;
+	const float radius = (airMT != NULL)? std::max(airMT->turnRadius + 2 * SQUARE_SIZE, 128.f) : 127.f;
+
+	// we're either circling or will get to the target in 8 frames
+	if ((owner->pos - cmdPos).SqLength2D() < (radius * radius)
+			|| (owner->pos + owner->speed*8 - cmdPos).SqLength2D() < 127*127)
+	{
+		StopMoveAndFinishCommand();
+	}
+}
+
 
 void CAirCAI::ExecuteFight(Command& c)
 {
@@ -299,7 +311,7 @@ void CAirCAI::ExecuteFight(Command& c)
 		}
 	}
 
-	goalPos = c.GetPos(0);
+	float3 goalPos = c.GetPos(0);
 
 	if (!inCommand) {
 		inCommand = true;
@@ -369,17 +381,7 @@ void CAirCAI::ExecuteFight(Command& c)
 		}
 	}
 
-	myPlane->goalPos = goalPos;
-
-	const CStrafeAirMoveType* airMT = (!owner->UsingScriptMoveType())? static_cast<const CStrafeAirMoveType*>(myPlane): NULL;
-	const float radius = (airMT != NULL)? std::max(airMT->turnRadius + 2*SQUARE_SIZE, 128.f) : 127.f;
-
-	// we're either circling or will get to the target in 8 frames
-	if ((owner->pos - goalPos).SqLength2D() < (radius * radius)
-			|| (owner->pos + owner->speed*8 - goalPos).SqLength2D() < 127*127)
-	{
-		FinishCommand();
-	}
+	ExecuteMove(c);
 }
 
 void CAirCAI::ExecuteAttack(Command& c)
@@ -391,25 +393,25 @@ void CAirCAI::ExecuteAttack(Command& c)
 		// limit how far away we fly
 		if (orderTarget && LinePointDist(commandPos1, commandPos2, orderTarget->pos) > 1500) {
 			owner->DropCurrentAttackTarget();
-			FinishCommand();
+			StopMoveAndFinishCommand();
 			return;
 		}
 	}
 
 	if (inCommand) {
 		if (targetDied || (c.params.size() == 1 && UpdateTargetLostTimer(int(c.params[0])) == 0)) {
-			FinishCommand();
+			StopMoveAndFinishCommand();
 			return;
 		}
 		if (orderTarget != NULL) {
 			if (orderTarget->unitDef->canfly && orderTarget->IsCrashing()) {
 				owner->DropCurrentAttackTarget();
-				FinishCommand();
+				StopMoveAndFinishCommand();
 				return;
 			}
 			if (!(c.options & ALT_KEY) && SkipParalyzeTarget(orderTarget)) {
 				owner->DropCurrentAttackTarget();
-				FinishCommand();
+				StopMoveAndFinishCommand();
 				return;
 			}
 		}
@@ -419,10 +421,10 @@ void CAirCAI::ExecuteAttack(Command& c)
 		if (c.params.size() == 1) {
 			CUnit* targetUnit = unitHandler->GetUnit(c.params[0]);
 
-			if (targetUnit == NULL) { FinishCommand(); return; }
-			if (targetUnit == owner) { FinishCommand(); return; }
+			if (targetUnit == NULL) { StopMoveAndFinishCommand(); return; }
+			if (targetUnit == owner) { StopMoveAndFinishCommand(); return; }
 			if (targetUnit->GetTransporter() != NULL && !modInfo.targetableTransportedUnits) {
-				FinishCommand(); return;
+				StopMoveAndFinishCommand(); return;
 			}
 
 			SetGoal(targetUnit->pos, owner->pos, cancelDistance);
@@ -478,9 +480,9 @@ void CAirCAI::ExecuteGuard(Command& c)
 
 	const CUnit* guardee = unitHandler->GetUnit(c.params[0]);
 
-	if (guardee == NULL) { FinishCommand(); return; }
-	if (UpdateTargetLostTimer(guardee->id) == 0) { FinishCommand(); return; }
-	if (guardee->outOfMapTime > (GAME_SPEED * 5)) { FinishCommand(); return; }
+	if (guardee == NULL) { StopMoveAndFinishCommand(); return; }
+	if (UpdateTargetLostTimer(guardee->id) == 0) { StopMoveAndFinishCommand(); return; }
+	if (guardee->outOfMapTime > (GAME_SPEED * 5)) { StopMoveAndFinishCommand(); return; }
 
 	const bool pushAttackCommand =
 		(owner->maxRange > 0.0f) &&
@@ -549,11 +551,6 @@ void CAirCAI::BuggerOff(const float3& pos, float radius)
 	}
 }
 
-void CAirCAI::SetGoal(const float3& pos, const float3& curPos, float goalRadius)
-{
-	owner->moveType->SetGoal(pos);
-	CMobileCAI::SetGoal(pos, curPos, goalRadius);
-}
 
 bool CAirCAI::SelectNewAreaAttackTargetOrPos(const Command& ac)
 {

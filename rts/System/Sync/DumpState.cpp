@@ -11,6 +11,7 @@
 #include "Game/GlobalUnsynced.h"
 #include "Net/GameServer.h"
 #include "Rendering/Models/3DModel.h"
+#include "Sim/Features/FeatureDef.h"
 #include "Sim/Features/FeatureHandler.h"
 #include "Sim/Misc/GlobalSynced.h"
 #include "Sim/Misc/TeamHandler.h"
@@ -19,6 +20,7 @@
 #include "Sim/Projectiles/ProjectileHandler.h"
 #include "Sim/Units/CommandAI/CommandAI.h"
 #include "Sim/Units/Unit.h"
+#include "Sim/Units/UnitHandler.h"
 #include "Sim/Weapons/Weapon.h"
 #include "Sim/Weapons/WeaponDefHandler.h"
 #include "System/Util.h"
@@ -91,7 +93,6 @@ void DumpState(int newMinFrameNum, int newMaxFrameNum, int newFramePeriod)
 
 	CFeatureSet::const_iterator featuresIt;
 	ProjectileContainer::iterator projectilesIt;
-	std::vector<LocalModelPiece*>::const_iterator piecesIt;
 	std::vector<CWeapon*>::const_iterator weaponsIt;
 
 	file << "frame: " << gs->frameNum << ", seed: " << gs->GetRandSeed() << "\n";
@@ -110,8 +111,8 @@ void DumpState(int newMinFrameNum, int newMaxFrameNum, int newFramePeriod)
 	#ifdef DUMP_UNIT_DATA
 	for (CUnit* u: units) {
 		const std::vector<CWeapon*>& weapons = u->weapons;
-		const LocalModel* lm = u->localModel;
-		const std::vector<LocalModelPiece>& pieces = lm->pieces;
+		const LocalModel& lm = u->localModel;
+		const std::vector<LocalModelPiece>& pieces = lm.pieces;
 		const float3& pos = u->pos;
 		const float3& xdir = u->rightdir;
 		const float3& ydir = u->updir;
@@ -130,12 +131,13 @@ void DumpState(int newMinFrameNum, int newMaxFrameNum, int newFramePeriod)
 		file << "\t\t\tpieces: " << pieces.size() << "\n";
 
 		#ifdef DUMP_UNIT_PIECE_DATA
-		for (const auto& lmp: pieces) {
+		for (const LocalModelPiece& lmp: pieces) {
 			const S3DModelPiece* omp = lmp.original;
+			const S3DModelPiece* par = omp->parent;
 			const float3& ppos = lmp.GetPosition();
 			const float3& prot = lmp.GetRotation();
 
-			file << "\t\t\t\tname: " << omp->name << " (parentName: " << omp->parentName << ")\n";
+			file << "\t\t\t\tname: " << omp->name << " (parentName: " << ((par != nullptr)? par->name: "[null]") << ")\n";
 			file << "\t\t\t\tpos: <" << ppos.x << ", " << ppos.y << ", " << ppos.z << ">\n";
 			file << "\t\t\t\trot: <" << prot.x << ", " << prot.y << ", " << prot.z << ">\n";
 			file << "\t\t\t\tvisible: " << lmp.scriptSetVisible << "\n";

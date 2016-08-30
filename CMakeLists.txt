@@ -1,11 +1,3 @@
-# CMake 2.4:
-# - lacks some cross-compiling features and fails on windows
-# CMake 2.6:
-# - fixes: Windows command line is limited to 32k length commands
-# CMake 2.6.3:
-# + support for SOURCES attribute of add_custom_target() (not required anymore)
-# CMake 2.8
-# + works around command line length limited by using an @objectFilesList.txt parameter when linking
 # CMake 2.8.10
 # + adds support for CMAKE_CXX_COMPILER_ID (which is ignored with older cmake)
 cmake_minimum_required(VERSION 2.8.11)
@@ -27,16 +19,12 @@ CheckMinCMakeVersion(CUSTOM_TARGET_SOURCES_SUPPORT 2 6 3)
 
 
 # check for minimal gcc version
-set(MIN_GCC_VER "4.7")
+set(MIN_GCC_VER "4.8")
 if(${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU")
-	if(NOT ${CMAKE_CXX_COMPILER_VERSION} STREQUAL "")
-		if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "${MIN_GCC_VER}")
-			message(FATAL_ERROR "gcc >=${MIN_GCC_VER} required")
-		else()
-			message(STATUS "gcc ${CMAKE_CXX_COMPILER_VERSION} detected")
-		endif()
+	if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "${MIN_GCC_VER}")
+		message(FATAL_ERROR "gcc >=${MIN_GCC_VER} required")
 	else()
-		message(WARNING "cmake version <2.8.10 found, couldn't check for gcc ${MIN_GCC_VER}")
+		message(STATUS "gcc ${CMAKE_CXX_COMPILER_VERSION} detected")
 	endif()
 endif()
 
@@ -96,6 +84,21 @@ else  (APPLE)
 	set(MACOSX_BUNDLE FALSE)
 endif (APPLE)
 
+### Compiler flags and defines based on build type
+INCLUDE(TestCXXFlags)
+
+## 32bit or 64bit?
+set(MARCH_FLAG ${MARCH} CACHE STRING "CPU optimization (use i686 for generic optimization)")
+if    (CMAKE_SIZEOF_VOID_P EQUAL 8)
+	set(MARCH_BITS 64 CACHE INTERNAL "" FORCE)
+else  (CMAKE_SIZEOF_VOID_P EQUAL 8)
+	set(MARCH_BITS 32 CACHE INTERNAL "" FORCE)
+endif (CMAKE_SIZEOF_VOID_P EQUAL 8)
+
+Message(STATUS "Building Spring on ${MARCH_BITS}bit environment")
+set(BUILD_BITS "${MARCH_BITS}" CACHE STRING "Target arch machine type")
+Message(STATUS "Targetting ${BUILD_BITS}bit")
+
 
 ### Install paths (relative to CMAKE_INSTALL_PREFIX)
 if    (UNIX AND NOT MINGW)
@@ -118,29 +121,42 @@ else  (UNIX AND NOT MINGW)
 		if(MSVC)
 			set(MINGWLIBS ${CMAKE_SOURCE_DIR}/vclibs CACHE PATH "Location of the vclibs package")
 		else(MSVC)
-			set(MINGWLIBS ${CMAKE_SOURCE_DIR}/mingwlibs CACHE PATH "Location of the mingwlibs package")
+			if(BUILD_BITS EQUAL 32)
+				set(MINGWLIBS ${CMAKE_SOURCE_DIR}/mingwlibs CACHE PATH "Location of the mingwlibs package")
+			else(BUILD_BITS EQUAL 32)
+				set(MINGWLIBS ${CMAKE_SOURCE_DIR}/mingwlibs64 CACHE PATH "Location of the mingwlibs package")
+			endif(BUILD_BITS EQUAL 32)
 		endif(MSVC)
-	endif (NOT MINGWLIBS)
-	if    (NOT EXISTS "${MINGWLIBS}" OR NOT IS_DIRECTORY "${MINGWLIBS}")
-		MESSAGE(FATAL_ERROR "MINGWLIBS '${MINGWLIBS}' is not a valid directory")
-	endif (NOT EXISTS "${MINGWLIBS}" OR NOT IS_DIRECTORY "${MINGWLIBS}")
+	endif ()
+	if    (EXISTS "${MINGWLIBS}" AND IS_DIRECTORY "${MINGWLIBS}")
+		# MinGW needs an additional library, mwindows
+		# It's total link flags should look like -lmingw32 -lSDL2main -lSDL2 -lmwindows
+		# (Actually on second look, I think it only needs one of the m* libraries.)
+		if(NOT MSVC)
+			SET(MINGW32_LIBRARY mingw32 CACHE STRING "mwindows for MinGW")
+		endif(NOT MSVC)
+		set(SDL2_INCLUDE_DIR "${MINGWLIBS}/include/SDL2")
+		set(CMAKE_PREFIX_PATH ${MINGWLIBS})
+		include_directories(${MINGWLIBS}/include)
+		set(CMAKE_LIBRARY_PATH ${MINGWLIBS}/dll ${MINGWLIBS}/lib)
 
-	set(CMAKE_PREFIX_PATH ${MINGWLIBS})
+		# some cross-compile fixes
+		set(CMAKE_FIND_ROOT_PATH ${MINGWLIBS} ${CMAKE_FIND_ROOT_PATH})
+		set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+		set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+	else()
+		MESSAGE(WARNING "Compiling for windows. MINGWLIBS '${MINGWLIBS}' is not a valid directory, trying system libs")
+	endif ()
+
+
 	add_definitions(-D_WIN32_WINNT=0x502) ## vista is minimum due to InterlockedIncrement64
 	add_definitions(-D__USE_MINGW_ANSI_STDIO=1) ## use __mingw_sprintf instead of __builtin_sprintf (it's used by lua in a synced way, and builtin doesn't sync)
 
-	include_directories(${MINGWLIBS}/include)
-	set(CMAKE_LIBRARY_PATH ${MINGWLIBS}/dll ${MINGWLIBS}/lib)
-
-	# some cross-compile fixes
-	set(CMAKE_FIND_ROOT_PATH ${MINGWLIBS} ${CMAKE_FIND_ROOT_PATH})
-	set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
-	set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 
 	if(MSVC)
 		add_definitions(-DBOOST_ALL_NO_LIB -DNOMINMAX -DWIN32_LEAN_AND_MEAN)
 		set(Boost_USE_STATIC_LIBS ON)
-		#set(GLEW_STATIC ON)
+		set(GLEW_STATIC ON)
 		set(EXE_FLAGS WIN32)
 	endif()
 endif (UNIX AND NOT MINGW)
@@ -198,6 +214,11 @@ if    (SYNCCHECK)
 	add_definitions(-DSYNCCHECK)
 endif (SYNCCHECK)
 
+option(NO_CREG "Disable creg support" FALSE)
+if    (NO_CREG)
+	add_definitions(-DNOT_USING_CREG)
+endif (NO_CREG)
+
 option(NO_SOUND "No sound output support" FALSE)
 
 if    (WIN32)
@@ -216,21 +237,12 @@ if    (WIN32)
 	endif(NOT MSVC)
 endif (WIN32)
 
-option(HEADLESS_SYSTEM "Compile a headless executable (other executables will not be built!)" FALSE)
-if    (HEADLESS_SYSTEM AND NOT NO_SOUND)
-	message(FATAL_ERROR "HEADLESS_SYSTEM requires NO_SOUND to be set!")
-endif (HEADLESS_SYSTEM AND NOT NO_SOUND)
-
 option(USE_LIBSQUISH "Enable libsquish for DXT decompressing. (needed for ETC1 support)" TRUE)
 if    (USE_LIBSQUISH)
 	add_definitions(-DUSE_LIBSQUISH)
 endif (USE_LIBSQUISH)
 
 
-### external libs
-if    (MINGW OR MSVC)
-	set(SDL2_INCLUDE_DIR "${MINGWLIBS}/include/SDL2")
-endif (MINGW OR MSVC)
 
 FIND_PACKAGE(Boost 1.51.0 COMPONENTS thread regex program_options system chrono signals filesystem REQUIRED)
 FIND_PACKAGE(Boost 1.51.0 COMPONENTS timer)
@@ -287,23 +299,6 @@ if    (VALGRIND_FOUND)
 	add_definitions(-DUSE_VALGRIND)
 endif (VALGRIND_FOUND)
 
-
-### Compiler flags and defines based on build type
-INCLUDE(TestCXXFlags)
-
-## 32bit or 64bit?
-set(MARCH_FLAG ${MARCH} CACHE STRING "CPU optimization (use i686 for generic optimization)")
-if    (CMAKE_SIZEOF_VOID_P EQUAL 8)
-	Message(STATUS "Building Spring for 64bit environment")
-	set(MARCH_BITS 64 INTERNAL)
-	if     (MINGW)
-		Message(FATAL_ERROR "Spring's MinGWLibs don't include 64bit libraries (yet). Please, compile as 32bit. See https://springrts.com/wiki/Building_Spring_on_Windows for instructions.")
-	endif  (MINGW)
-else  (CMAKE_SIZEOF_VOID_P EQUAL 8)
-	Message(STATUS "Building Spring for 32bit environment")
-	set(MARCH_BITS 32 INTERNAL)
-endif (CMAKE_SIZEOF_VOID_P EQUAL 8)
-
 INCLUDE (CheckSymbolExists)
 CHECK_SYMBOL_EXISTS(strnlen string.h HAVE_STRNLEN)
 if (NOT HAVE_STRNLEN)
@@ -311,9 +306,27 @@ if (NOT HAVE_STRNLEN)
 endif()
 
 ### Add Link-Time-Optimization flags, if supported (GCC >= 4.5) and enabled
-Set(CMAKE_CXX_FLAGS           "${CMAKE_CXX_FLAGS}           ${LTO_FLAGS}")
-Set(CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS}    ${LTO_FLAGS}")
-Set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} ${LTO_FLAGS}")
+option(LTO "Link Time Optimizations (LTO)" FALSE)
+if    (LTO)
+	if    (NOT LTO_FLAGS)
+		Message(WARNING "Tried to enable LTO, but compiler doesn't support it!")
+	endif (NOT LTO_FLAGS)
+	Set(CMAKE_CXX_FLAGS           "${CMAKE_CXX_FLAGS}           ${LTO_FLAGS}")
+	Set(CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS}    ${LTO_FLAGS}")
+	Set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} ${LTO_FLAGS}")
+endif (LTO)
+
+
+### Memory Access Protection (BoundsChecking)
+option(DEBUG_BOUNDSCHECK "Array/Pointer BoundsChecking a.k.a. buffer overflow protection (debug)" FALSE)
+if    (DEBUG_BOUNDSCHECK)
+	if    (NOT MPX_FLAGS)
+		Message(WARNING "Tried to enable BoundsCheck, but compiler doesn't support it!")
+	endif (NOT MPX_FLAGS)
+	Set(CMAKE_CXX_FLAGS           "${CMAKE_CXX_FLAGS}           ${MPX_FLAGS}")
+	Set(CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS}    ${MPX_FLAGS}")
+	Set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} ${MPX_FLAGS}")
+endif (DEBUG_BOUNDSCHECK)
 
 
 ### ld.gold
@@ -342,10 +355,6 @@ add_definitions(-D_RANDOM_TCC) # don't include <bits/random.tcc>, it fails to co
 
 ### our custom OpenMP replacement
 option(THREADPOOL "Enable ThreadPools" TRUE)
-if(MSVC)
-	message(WARNING "MSVC doesn't support THREADPOOL, disabled!")
-	set(THREADPOOL FALSE CACHE BOOL "" FORCE)
-endif()
 if (THREADPOOL)
 	add_definitions(-DTHREADPOOL)
 endif(THREADPOOL)
@@ -354,28 +363,36 @@ endif(THREADPOOL)
 ### warnings
 if(NOT MSVC)
 	### SigNan
-	option(SIGNAL_NANS "Enable NaN-Signalling" ${DEBUG_BUILD})
-	if (SIGNAL_NANS)
+	option(DEBUG_SIGNAL_NANS "Enable NaN-Signaling" ${DEBUG_BUILD})
+	if (DEBUG_SIGNAL_NANS)
 		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsignaling-nans")
-	endif(SIGNAL_NANS)
+	endif(DEBUG_SIGNAL_NANS)
 
 
 	### CompileTime Warnings
-	set(COMMON_WARNINGS "")
-	if    (NOT OPENMP)
-		# disable warnings about unknown pragmas because of:
-		# "#pragma omp parallel for *"
-		set(COMMON_WARNINGS "${COMMON_WARNINGS} -Wno-unknown-pragmas")
-	endif (NOT OPENMP)
+	set(COMMON_WARNINGS "${COMMON_WARNINGS} -Wformat -Wformat-security")
 
-	if    (MAX_WARNINGS)
+	option(DEBUG_MAX_WARNINGS "Enable verbose compile" ${DEBUG_BUILD})
+	if    (DEBUG_MAX_WARNINGS)
 		# This would produce the maximum on warnings
 		set(DEBUG_WARNINGS "-Wall -Wconversion ${COMMON_WARNINGS}")
-	else  (MAX_WARNINGS)
+	else  (DEBUG_MAX_WARNINGS)
 		# This should produce a sane amount of warnings
 		set(DEBUG_WARNINGS "-Wall -Wno-sign-compare ${COMMON_WARNINGS}")
-	endif (MAX_WARNINGS)
+	endif (DEBUG_MAX_WARNINGS)
 endif(NOT MSVC)
+
+
+if(DEBUG_BUILD)
+        set(DEBUG_LUANAN_DEFAULT TRUE)
+else()
+        set(DEBUG_LUANAN_DEFAULT FALSE)
+endif()
+
+option(DEBUG_LUANAN "check for nans in lua" ${DEBUG_LUANAN_DEFAULT})
+if(DEBUG_LUANAN)
+        add_definitions(-DDEBUG_LUANAN)
+endif()
 
 
 ### streflop
@@ -410,10 +427,24 @@ else   (MSVC)
 	Message(WARNING "unknown compiler")
 endif ($ENV{CXX} MATCHES "icpc")
 
+set(CXX_DEBUG_DEFINES          "-DDEBUG -D_DEBUG -DNO_CATCH_EXCEPTIONS")
+set(CXX_RELWITHDEBINFO_DEFINES "-DNDEBUG")
+set(CXX_RELEASE_DEFINES        "-DNDEBUG")
+set(CXX_PROFILE_DEFINES        "-DNDEBUG -DPROFILE")
 
 #### build types
 if    (MSVC)
 	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /LARGEADDRESSAWARE")
+	set(MSVC_CXX_FLAGS "/wd4146 /wd4711")
+
+	set(CMAKE_CXX_FLAGS_DEBUG           "${CMAKE_CXX_FLAGS_DEBUG}                       /MP ${MSVC_CXX_FLAGS} ${CXX_DEBUG_DEFINES}")
+	set(CMAKE_CXX_FLAGS_RELWITHDEBINFO  "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} /O2 /Ob2 /GL /MP ${MSVC_CXX_FLAGS} ${CXX_RELWITHDEBINFO_DEFINES}")
+	set(CMAKE_CXX_FLAGS_RELEASE         "${CMAKE_CXX_FLAGS_RELEASE}        /O2 /Ob2 /GL /MP ${MSVC_CXX_FLAGS} ${CXX_RELEASE_DEFINES}")
+	set(CMAKE_CXX_FLAGS_PROFILE         "${CMAKE_CXX_FLAGS_PROFILE}        /O2 /Ob2 /GL /MP ${MSVC_CXX_FLAGS} ${CXX_PROFILE_DEFINES}")
+
+	set(CMAKE_EXE_LINKER_FLAGS_RELEASE        "${CMAKE_EXE_LINKER_FLAGS_RELEASE}        /LTCG")
+	set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} /LTCG")
+	set(CMAKE_CXX_FLAGS_PROFILE               "${CMAKE_CXX_FLAGS_PROFILE} /LTCG")
 else  (MSVC)
 	if (CMAKE_COMPILER_IS_GNUCXX)
 		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsingle-precision-constant -frounding-math")
@@ -428,24 +459,31 @@ else  (MSVC)
 
 	add_definitions(-DBOOST_NO_FENV_H) # streflop overrides fenv.h
 
-	set(CMAKE_CXX_FLAGS_DEBUG           "${CXX_FLAGS_DEBUG_ADDITIONAL} -O0     ${DEBUG_WARNINGS}  -DDEBUG -D_DEBUG -DNO_CATCH_EXCEPTIONS")
-	set(CMAKE_CXX_FLAGS_RELWITHDEBINFO  "${CXX_FLAGS_DEBUG_ADDITIONAL} -O2     ${COMMON_WARNINGS} -DNDEBUG")
-	set(CMAKE_CXX_FLAGS_RELEASE         "                              -O2     ${COMMON_WARNINGS} -DNDEBUG")
-	set(CMAKE_CXX_FLAGS_PROFILE         "                              -O2 -pg ${DEBUG_WARNINGS}  -DNDEBUG -DPROFILE")
+	set(CMAKE_CXX_FLAGS_DEBUG           "${CXX_FLAGS_DEBUG_ADDITIONAL} -O0     ${DEBUG_WARNINGS}  ${CXX_DEBUG_DEFINES}")
+	set(CMAKE_CXX_FLAGS_RELWITHDEBINFO  "${CXX_FLAGS_DEBUG_ADDITIONAL} -O2     ${COMMON_WARNINGS} ${CXX_RELWITHDEBINFO_DEFINES}")
+	set(CMAKE_CXX_FLAGS_RELEASE         "                              -O2     ${COMMON_WARNINGS} ${CXX_RELEASE_DEFINES}")
+	set(CMAKE_CXX_FLAGS_PROFILE         "                              -O2 -pg ${DEBUG_WARNINGS}  ${CXX_PROFILE_DEFINES}")
 	set(CMAKE_MODULE_LINKER_FLAGS_PROFILE "-pg")
 	set(CMAKE_SHARED_LINKER_FLAGS_PROFILE "-pg")
 
 	set(CMAKE_CXX_FLAGS_DEBUG          "${CMAKE_CXX_FLAGS_DEBUG} -ggdb")
 	set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -g")
 
+	if (MARCH_BITS EQUAL 64 AND BUILD_BITS EQUAL 32)
+		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -m32")
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -m32")
+	endif (MARCH_BITS EQUAL 64 AND BUILD_BITS EQUAL 32)
+
 	if     (MINGW)
-		set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--enable-auto-import")
-		if    (MARCH_BITS EQUAL 32)
+		set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++ -Wl,--enable-auto-import")
+		if    (BUILD_BITS EQUAL 32)
 			# Increase memory limit from 2GB to 3GB on 32bit Windows and 2GB->4GB on 64bit Windows (assuming spring.exe is 32bit)
 			# http://msdn.microsoft.com/en-us/library/windows/desktop/aa366778(v=vs.85).aspx
 			Message(STATUS "Enable IMAGE_FILE_LARGE_ADDRESS_AWARE (>2GB memory limit)")
 			set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--large-address-aware")
-		endif (MARCH_BITS EQUAL 32)
+		else (BUILD_BITS EQUAL 32)
+			Message(WARNING "The 64bit version of spring on windows is experimental and may not sync with regular builds")
+		endif (BUILD_BITS EQUAL 32)
 	endif  (MINGW)
 endif (MSVC)
 
@@ -466,27 +504,51 @@ Endif(EXISTS "${CMAKE_SOURCE_DIR}/.git")
 # Generate the version files
 Set(VERSION_GENERATE_DIR "${CMAKE_BINARY_DIR}")
 
-Set_Source_Files_Properties(
+Set(VERSION_GENERATE_SOURCES
 		"${VERSION_GENERATE_DIR}/src-generated/engine/System/VersionGenerated.h"
 		"${VERSION_GENERATE_DIR}/VERSION"
-		PROPERTIES GENERATED TRUE
 	)
+
+Set_Source_Files_Properties(
+	${VERSION_GENERATE_SOURCES}
+	PROPERTIES GENERATED TRUE
+)
 
 # This is always executed (on every run of "make"),
 # but the actual version files are only written in case of a change
 # in the version info they use, or in the template file content.
-Add_Custom_Target(generateVersionFiles)
-Add_Custom_Command(TARGET generateVersionFiles
-	COMMAND "${CMAKE_COMMAND}"
-		"-DSOURCE_ROOT=${CMAKE_SOURCE_DIR}"
-		"-DCMAKE_MODULES_SPRING=${CMAKE_MODULES_SPRING}"
-		"-DGENERATE_DIR=${VERSION_GENERATE_DIR}"
-		"-DVERSION_ADDITIONAL=${VERSION_ADDITIONAL}"
-		-P "${CMAKE_MODULES_SPRING}/ConfigureVersion.cmake"
-		"${VERSION_GENERATE_DIR}"
-	COMMENT
-		"  Configuring Version files ..." VERBATIM
+IF (MSVC)
+	Add_Custom_Command(
+		OUTPUT ${VERSION_GENERATE_SOURCES}
+		COMMAND "${CMAKE_COMMAND}"
+			"-DSOURCE_ROOT=${CMAKE_SOURCE_DIR}"
+			"-DCMAKE_MODULES_SPRING=${CMAKE_MODULES_SPRING}"
+			"-DGENERATE_DIR=${VERSION_GENERATE_DIR}"
+			"-DVERSION_ADDITIONAL=${VERSION_ADDITIONAL}"
+			-P "${CMAKE_MODULES_SPRING}/ConfigureVersion.cmake"
+			"${VERSION_GENERATE_DIR}"
+		COMMENT
+			"  Configuring Version files ..." VERBATIM
+		)
+	Add_Custom_Target(generateVersionFiles DEPENDS ${VERSION_GENERATE_SOURCES})
+ELSE (MSVC)
+	# This is always executed (on every run of "make"),
+	# but the actual version files are only written in case of a change
+	# in the version info they use, or in the template file content.
+	Add_Custom_Target(generateVersionFiles)
+	Add_Custom_Command(TARGET generateVersionFiles
+		COMMAND "${CMAKE_COMMAND}"
+			"-DSOURCE_ROOT=${CMAKE_SOURCE_DIR}"
+			"-DCMAKE_MODULES_SPRING=${CMAKE_MODULES_SPRING}"
+			"-DGENERATE_DIR=${VERSION_GENERATE_DIR}"
+			"-DVERSION_ADDITIONAL=${VERSION_ADDITIONAL}"
+			-P "${CMAKE_MODULES_SPRING}/ConfigureVersion.cmake"
+			"${VERSION_GENERATE_DIR}"
+		COMMENT
+			"  Configuring Version files ..." VERBATIM
 	)
+
+ENDIF (MSVC)
 
 Add_Dependencies(generateSources generateVersionFiles)
 

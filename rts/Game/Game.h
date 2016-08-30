@@ -5,6 +5,7 @@
 
 #include <string>
 #include <map>
+#include <vector>
 
 #include "GameController.h"
 #include "Game/UI/KeySet.h"
@@ -37,7 +38,8 @@ public:
 		gameNormalDraw     = 1,
 		gameShadowDraw     = 2,
 		gameReflectionDraw = 3,
-		gameRefractionDraw = 4
+		gameRefractionDraw = 4,
+		gameDeferredDraw   = 5,
 	};
 
 	struct PlayerTrafficInfo {
@@ -98,10 +100,9 @@ public:
 	void ParseInputTextGeometry(const std::string& geo);
 
 	void ReloadGame();
-	void SaveGame(const std::string& filename, bool overwrite);
+	void SaveGame(const std::string& filename, bool overwrite, bool usecreg);
 
 	void ResizeEvent();
-	void SetupRenderingParams();
 
 	void SetDrawMode(GameDrawMode mode) { gameDrawMode = mode; }
 	GameDrawMode GetDrawMode() const { return gameDrawMode; }
@@ -111,8 +112,9 @@ private:
 	bool UpdateUnsynced(const spring_time currentTime);
 
 	void DrawSkip(bool blackscreen = true);
+	void DrawInputReceivers();
 	void DrawInputText();
-	void UpdateCam();
+	void DrawInterfaceWidgets();
 
 	/// Format and display a chat message received over network
 	void HandleChatMsg(const ChatMessage& msg);
@@ -121,6 +123,8 @@ private:
 	int KeyReleased(int k);
 	/// Called when the key is pressed by the user (can be called several times due to key repeat)
 	int KeyPressed(int k, bool isRepeat);
+	///
+	int TextInput(const std::string& utf8Text);
 
 	bool ActionPressed(unsigned int key, const Action& action, bool isRepeat);
 	bool ActionReleased(const Action& action);

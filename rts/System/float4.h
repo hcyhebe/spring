@@ -45,13 +45,6 @@ struct float4 : public float3
 		return *this;
 	}
 
-	inline float4& operator= (const float4& f) {
-		x = f.x; y = f.y;
-		z = f.z; w = f.w;
-		return *this;
-	}
-
-
 	inline float4& operator += (const float4& f) {
 		x += f.x; y += f.y;
 		z += f.z; w += f.w;
@@ -89,12 +82,7 @@ struct float4 : public float3
 	inline bool operator == (const float3& f) const { return (this->float3::operator == (f)); }
 	inline bool operator != (const float3& f) const { return (this->float3::operator != (f)); }
 
-	inline bool operator == (const float4& f) const {
-		return math::fabs(x - f.x) <= math::fabs(float3::CMP_EPS * x)
-			&& math::fabs(y - f.y) <= math::fabs(float3::CMP_EPS * y)
-			&& math::fabs(z - f.z) <= math::fabs(float3::CMP_EPS * z)
-			&& math::fabs(w - f.w) <= math::fabs(float3::CMP_EPS * w);
-	}
+	bool operator == (const float4& f) const;
 
 	inline bool operator != (const float4& f) const {
 		return !(*this == f);

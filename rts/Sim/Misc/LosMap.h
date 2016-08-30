@@ -50,8 +50,7 @@ private:
 	void UnsafeLosAdd(SLosInstance* instance) const;
 	void SafeLosAdd(SLosInstance* instance) const;
 
-	inline void CastLos(float* maxAng, const int2 off, std::vector<bool>& squaresMap, std::vector<float>& anglesMap, const int radius) const;
-	void AddSquaresToInstance(SLosInstance* li, const std::vector<bool>& squaresMap) const;
+	void AddSquaresToInstance(SLosInstance* li, const std::vector<char>& squaresMap) const;
 
 protected:
 	const int2 size;

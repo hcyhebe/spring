@@ -180,9 +180,9 @@ namespace
 	#define STRTOF strtof
 #endif
 
-	DECLARE_FILTER_EX(RulesParamEquals, 2, unit->modParamsMap.find(param) != unit->modParamsMap.end() &&
-			((wantedValueStr.empty()) ? unit->modParams[unit->modParamsMap.find(param)->second].valueInt == wantedValue
-			: unit->modParams[unit->modParamsMap.find(param)->second].valueString == wantedValueStr),
+	DECLARE_FILTER_EX(RulesParamEquals, 2, unit->modParams.find(param) != unit->modParams.end() &&
+			((wantedValueStr.empty()) ? unit->modParams.find(param)->second.valueInt == wantedValue
+			: unit->modParams.find(param)->second.valueString == wantedValueStr),
 		std::string param;
 		float wantedValue;
 		std::string wantedValueStr;
@@ -219,9 +219,8 @@ void CSelectionKeyHandler::DoSelection(std::string selectString)
 	if(s=="AllMap"){
 		if (!gu->spectatingFullSelect) {
 			// team units
-			CUnitSet* tu=&teamHandler->Team(gu->myTeam)->units;
-			for(CUnitSet::iterator ui=tu->begin();ui!=tu->end();++ui){
-				selection.push_back(*ui);
+			for(CUnit* unit: teamHandler->Team(gu->myTeam)->units){
+				selection.push_back(unit);
 			}
 		} else {
 			// all units
@@ -232,10 +231,9 @@ void CSelectionKeyHandler::DoSelection(std::string selectString)
 	} else if(s=="Visible"){
 		if (!gu->spectatingFullSelect) {
 			// team units in viewport
-			CUnitSet* tu=&teamHandler->Team(gu->myTeam)->units;
-			for (CUnitSet::iterator ui=tu->begin();ui!=tu->end();++ui){
-				if (camera->InView((*ui)->midPos,(*ui)->radius)){
-					selection.push_back(*ui);
+			for(CUnit* unit: teamHandler->Team(gu->myTeam)->units){
+				if (camera->InView(unit->midPos,unit->radius)){
+					selection.push_back(unit);
 				}
 			}
 		} else {
@@ -263,14 +261,13 @@ void CSelectionKeyHandler::DoSelection(std::string selectString)
 
 		if (!gu->spectatingFullSelect) {
 		  // team units in mouse range
-			CUnitSet* tu=&teamHandler->Team(gu->myTeam)->units;
-			for(CUnitSet::iterator ui=tu->begin();ui!=tu->end();++ui){
-				float3 up = (*ui)->pos;
+			for(CUnit* unit: teamHandler->Team(gu->myTeam)->units){
+				float3 up = unit->pos;
 				if (cylindrical) {
 					up.y = 0;
 				}
 				if(mp.SqDistance(up) < Square(maxDist)){
-					selection.push_back(*ui);
+					selection.push_back(unit);
 				}
 			}
 		} else {

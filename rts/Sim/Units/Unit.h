@@ -3,12 +3,9 @@
 #ifndef UNIT_H
 #define UNIT_H
 
-#include <list>
 #include <vector>
 #include <string>
 
-#include "Lua/LuaRulesParams.h"
-#include "Lua/LuaUnitMaterial.h"
 #include "Sim/Objects/SolidObject.h"
 #include "Sim/Misc/Resource.h"
 #include "Sim/Weapons/WeaponTarget.h"
@@ -23,9 +20,9 @@ class CMissileProjectile;
 class AMoveType;
 class CWeapon;
 class CUnitScript;
-struct DamageArray;
-struct LocalModel;
-struct LocalModelPiece;
+class DamageArray;
+class DynDamageArray;
+struct SolidObjectDef;
 struct UnitDef;
 struct UnitTrackStruct;
 struct UnitLoadParams;
@@ -85,6 +82,8 @@ public:
 	virtual void SlowUpdateWeapons();
 	virtual void Update();
 
+	const SolidObjectDef* GetDef() const { return ((const SolidObjectDef*) unitDef); }
+
 	virtual void DoDamage(const DamageArray& damages, const float3& impulse, CUnit* attacker, int weaponDefID, int projectileID);
 	virtual void DoWaterDamage();
 	virtual void FinishedBuilding(bool postInit);
@@ -107,24 +106,11 @@ public:
 
 	void ForcedMove(const float3& newPos);
 
+	void DeleteScript();
 	void EnableScriptMoveType();
 	void DisableScriptMoveType();
 
-	CMatrix44f GetTransformMatrix(const bool synced = false, const bool error = false) const;
-
-	const CollisionVolume* GetCollisionVolume(const LocalModelPiece* lmp) const;
-
-	void SetLastAttacker(CUnit* attacker);
-	void SetLastAttackedPiece(LocalModelPiece* p, int f) {
-		lastAttackedPiece      = p;
-		lastAttackedPieceFrame = f;
-	}
-	LocalModelPiece* GetLastAttackedPiece(int f) const {
-		if (lastAttackedPieceFrame == f)
-			return lastAttackedPiece;
-		return NULL;
-	}
-
+	CMatrix44f GetTransformMatrix(const bool synced = false) const final;
 
 	void DependentDied(CObject* o);
 
@@ -150,6 +136,8 @@ public:
 
 	void AddExperience(float exp);
 
+	void SetMass(float newMass);
+
 	void DoSeismicPing(float pingSize);
 
 	void CalculateTerrainType();
@@ -158,7 +146,11 @@ public:
 
 	float3 GetErrorVector(int allyteam) const;
 	float3 GetErrorPos(int allyteam, bool aiming = false) const { return (aiming? aimPos: midPos) + GetErrorVector(allyteam); }
-	float3 GetDrawErrorPos(int allyteam) const { return (drawMidPos + GetErrorVector(allyteam)); }
+	float3 GetObjDrawErrorPos(int allyteam) const { return (GetObjDrawMidPos() + GetErrorVector(allyteam)); }
+
+	float3 GetLuaErrorVector(int allyteam, bool fullRead) const { return (fullRead? ZeroVector: GetErrorVector(allyteam)); }
+	float3 GetLuaErrorPos(int allyteam, bool fullRead) const { return (midPos + GetLuaErrorVector(allyteam, fullRead)); }
+
 	void UpdatePosErrorParams(bool updateError, bool updateDelta);
 
 	bool UsingScriptMoveType() const { return (prevMoveType != NULL); }
@@ -175,6 +167,7 @@ public:
 
 	void SetLosStatus(int allyTeam, unsigned short newStatus);
 	unsigned short CalcLosStatus(int allyTeam);
+	void UpdateLosStatus(int allyTeam);
 
 	void SlowUpdateCloak(bool);
 	void ScriptDecloak(bool);
@@ -196,10 +189,10 @@ public:
 		int piece;
 	};
 
+	void SetLastAttacker(CUnit* attacker);
+
 	void SetTransporter(CUnit* trans) { transporter = trans; }
-	inline CUnit* GetTransporter() const {
-		return transporter;
-	}
+	inline CUnit* GetTransporter() const { return transporter; }
 
 	bool AttachUnit(CUnit* unit, int piece, bool force = false);
 	bool CanTransport(const CUnit* unit) const;
@@ -213,6 +206,7 @@ public:
 	short GetTransporteeWantedHeading(const CUnit* unit) const;
 
 public:
+	void ForcedKillUnit(CUnit* attacker, bool selfDestruct, bool reclaimed, bool showDeathSequence = true);
 	virtual void KillUnit(CUnit* attacker, bool selfDestruct, bool reclaimed, bool showDeathSequence = true);
 	virtual void IncomingMissile(CMissileProjectile* missile);
 
@@ -227,7 +221,6 @@ public:
 protected:
 	void ChangeTeamReset();
 	void UpdateResources();
-	void UpdateLosStatus(int allyTeam);
 	float GetFlankingDamageBonus(const float3& attackDir);
 
 public: // unsynced methods
@@ -264,15 +257,13 @@ public:
 	/// Our weapon with stockpiled ammo, NULL if we have none
 	CWeapon* stockpileWeapon;
 
+	const DynDamageArray* selfdExpDamages;
+	const DynDamageArray* deathExpDamages;
+
 	CUnit* soloBuilder;
 	/// last attacker
 	CUnit* lastAttacker;
 
-	/// piece that was last hit by a projectile
-	LocalModelPiece* lastAttackedPiece;
-
-	/// frame in which lastAttackedPiece was hit
-	int lastAttackedPieceFrame;
 	/// last frame unit was attacked by other unit
 	int lastAttackFrame;
 	/// last time this unit fired a weapon
@@ -287,14 +278,12 @@ public:
 	//Transporter stuff
 	int transportCapacityUsed;
 	float transportMassUsed;
-	std::list<TransportedUnit> transportedUnits;
+	std::vector<TransportedUnit> transportedUnits;
 
 	AMoveType* moveType;
 	AMoveType* prevMoveType;
 
 	CCommandAI* commandAI;
-
-	LocalModel* localModel;
 	CUnitScript* script;
 
 	/// which squares the unit can currently observe
@@ -309,7 +298,7 @@ public:
 	/// quads the unit is part of
 	std::vector<int> quads;
 
-	std::list<CMissileProjectile*> incomingMissiles; //FIXME make std::set?
+	std::vector<CMissileProjectile*> incomingMissiles; //FIXME make std::set?
 
 	float3 deathSpeed;
 	float3 lastMuzzleFlameDir;
@@ -321,19 +310,7 @@ public:
 	float3 posErrorVector;
 	float3 posErrorDelta;
 
-	int unitDefID;
 	int featureDefID; // FeatureDef id of the wreck we spawn on death
-
-	/**
-	 * @brief mod controlled parameters
-	 * This is a set of parameters that is initialized
-	 * in CreateUnitRulesParams() and may change during the game.
-	 * Each parameter is uniquely identified only by its id
-	 * (which is the index in the vector).
-	 * Parameters may or may not have a name.
-	 */
-	LuaRulesParams::Params  modParams;
-	LuaRulesParams::HashMap modParamsMap; ///< name map for mod parameters
 
 	/// indicate the relative power of the unit, used for experience calulations etc
 	float power;
@@ -341,7 +318,6 @@ public:
 	/// 0.0-1.0
 	float buildProgress;
 
-	float maxHealth;
 	/// if health-this is negative the unit is stunned
 	float paralyzeDamage;
 	/// how close this unit is to being captured
@@ -374,6 +350,7 @@ public:
 
 	/// id of transport that the unit is about to be picked up by
 	int loadingTransportId;
+	int unloadingTransportId;
 
 
 	/// used by constructing units
@@ -524,7 +501,6 @@ public:
 
 
 	// unsynced vars
-	bool noDraw;
 	bool noMinimap;
 	bool leaveTracks;
 
@@ -532,7 +508,6 @@ public:
 	bool isIcon;
 	float iconRadius;
 
-	int lastDrawFrame;
 	unsigned int lastUnitUpdate;
 
 	std::string tooltip;
@@ -541,12 +516,6 @@ public:
 
 	UnitTrackStruct* myTrack;
 	icon::CIconData* myIcon;
-
-	/// LOD length-per-pixel
-	unsigned int lodCount;
-	unsigned int currentLOD;
-	std::vector<float> lodLengths;
-	LuaUnitMaterial luaMats[LUAMAT_TYPE_COUNT];
 
 private:
 	/// if we are stunned by a weapon or for other reason, access via IsStunned/SetStunned(bool)

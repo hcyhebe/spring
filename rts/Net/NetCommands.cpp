@@ -25,6 +25,7 @@
 #include "Sim/Misc/GlobalSynced.h"
 #include "Sim/Misc/TeamHandler.h"
 #include "Sim/Path/IPathManager.h"
+#include "Sim/Units/UnitHandler.h"
 #include "System/EventHandler.h"
 #include "System/GlobalConfig.h"
 #include "System/Log/ILog.h"
@@ -472,18 +473,22 @@ void CGame::ClientReadNet()
 
 				const boost::uint32_t playerCheckSum = *(boost::uint32_t*) &inbuf[2];
 				const boost::uint32_t localCheckSum = pathManager->GetPathCheckSum();
+
 				const CPlayer* player = playerHandler->Player(playerNum);
 
+				const char* pName = player->name.c_str();
+				const char* pType = player->IsSpectator()? "spectator": "player";
+				const char* fmtStrs[2] = {
+					"[DESYNC WARNING] path-checksum for %s %d (%s) is 0; non-writable PathEstimator-cache?",
+					"[DESYNC WARNING] path-checksum %08x for %s %d (%s) does not match local checksum %08x; stale PathEstimator-cache?",
+				};
+
+				// XXX maybe use a "Desync" section here?
 				if (playerCheckSum == 0) {
-					LOG_L(L_WARNING, // XXX maybe use a "Desync" section here?
-							"[DESYNC WARNING] path-checksum for player %d (%s) is 0; non-writable PathEstimator-cache?",
-							playerNum, player->name.c_str());
+					LOG_L(L_WARNING, fmtStrs[0], pType, playerNum, pName);
 				} else {
 					if (playerCheckSum != localCheckSum) {
-						LOG_L(L_WARNING, // XXX maybe use a "Desync" section here?
-								"[DESYNC WARNING] path-checksum %08x for player %d (%s)"
-								" does not match local checksum %08x; stale PathEstimator-cache?",
-								playerCheckSum, playerNum, player->name.c_str(), localCheckSum);
+						LOG_L(L_WARNING, fmtStrs[1], playerCheckSum, pType, playerNum, pName, localCheckSum);
 					}
 				}
 			} break;
@@ -530,7 +535,7 @@ void CGame::ClientReadNet()
 
 			case NETMSG_SYNCRESPONSE: {
 #if (defined(SYNCCHECK))
-				if (gameServer != NULL && gameServer->GetDemoReader() != NULL) {
+				if (gameServer != nullptr && gameServer->GetDemoReader() != nullptr) {
 					// NOTE:
 					//   this packet is also sent during live games,
 					//   during which we should just ignore it (the
@@ -538,7 +543,7 @@ void CGame::ClientReadNet()
 					netcode::UnpackPacket pckt(packet, 1);
 
 					unsigned char playerNum; pckt >> playerNum;
-						  int  frameNum; pckt >> frameNum;
+					          int  frameNum; pckt >> frameNum;
 					unsigned  int  checkSum; pckt >> checkSum;
 
 					const unsigned int ourCheckSum = mySyncChecksums[frameNum];
@@ -550,10 +555,11 @@ void CGame::ClientReadNet()
 					if (playerNum == gu->myPlayerNum) { break; }
 					if (checkSum == ourCheckSum) { break; }
 
-					const char* fmtStr =
-						"[DESYNC_WARNING] checksum %x from player %d (%s)"
-						" does not match our checksum %x for frame-number %d";
-					LOG_L(L_ERROR, fmtStr, checkSum, playerNum, player->name.c_str(), ourCheckSum, frameNum);
+					const char* pName = player->name.c_str();
+					const char* pType = player->IsSpectator()? "spectator": "player";
+					const char* fmtStr = "[DESYNC WARNING] checksum %x from demo %s %d (%s) does not match our checksum %x for frame-number %d";
+
+					LOG_L(L_ERROR, fmtStr, checkSum, pType, playerNum, pName, ourCheckSum, frameNum);
 				}
 #endif
 			} break;
@@ -851,22 +857,22 @@ void CGame::ClientReadNet()
 
 				if (metalShare > 0.0f) {
 					if (eventHandler.AllowResourceTransfer(srcTeamID, dstTeamID, "m", metalShare)) {
-						srcTeam->res.metal                   -= metalShare;
-						srcTeam->resSent.metal               += metalShare;
-						srcTeam->currentStats->metalSent     += metalShare;
-						dstTeam->res.metal                   += metalShare;
-						dstTeam->resReceived.metal           += metalShare;
-						dstTeam->currentStats->metalReceived += metalShare;
+						srcTeam->res.metal                       -= metalShare;
+						srcTeam->resSent.metal                   += metalShare;
+						srcTeam->GetCurrentStats().metalSent     += metalShare;
+						dstTeam->res.metal                       += metalShare;
+						dstTeam->resReceived.metal               += metalShare;
+						dstTeam->GetCurrentStats().metalReceived += metalShare;
 					}
 				}
 				if (energyShare > 0.0f) {
 					if (eventHandler.AllowResourceTransfer(srcTeamID, dstTeamID, "e", energyShare)) {
-						srcTeam->res.energy                   -= energyShare;
-						srcTeam->resSent.energy               += energyShare;
-						srcTeam->currentStats->energySent     += energyShare;
-						dstTeam->res.energy                   += energyShare;
-						dstTeam->resReceived.energy           += energyShare;
-						dstTeam->currentStats->energyReceived += energyShare;
+						srcTeam->res.energy                       -= energyShare;
+						srcTeam->resSent.energy                   += energyShare;
+						srcTeam->GetCurrentStats().energySent     += energyShare;
+						dstTeam->res.energy                       += energyShare;
+						dstTeam->resReceived.energy               += energyShare;
+						dstTeam->GetCurrentStats().energyReceived += energyShare;
 					}
 				}
 
@@ -888,8 +894,8 @@ void CGame::ClientReadNet()
 						if (unit->isDead)
 							continue;
 						if (unit->beingBuilt)
-							continue; // why?
-						if (unit->IsStunned() || unit->IsCrashing())
+							continue;
+						if (unit->IsCrashing())
 							continue;
 
 						unit->ChangeTeam(dstTeamID, CUnit::ChangeGiven);

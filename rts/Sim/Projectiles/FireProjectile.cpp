@@ -5,7 +5,7 @@
 #include "Game/Camera.h"
 #include "Game/GlobalUnsynced.h"
 #include "Rendering/GlobalRendering.h"
-#include "Rendering/ProjectileDrawer.h"
+#include "Rendering/Env/Particles/ProjectileDrawer.h"
 #include "Rendering/GL/VertexArray.h"
 #include "Rendering/Textures/TextureAtlas.h"
 #include "Sim/Misc/GlobalSynced.h"
@@ -17,7 +17,7 @@
 #include "Sim/Units/Unit.h"
 #include "System/creg/STL_List.h"
 
-CR_BIND_DERIVED(CFireProjectile, CProjectile, (ZeroVector,ZeroVector,NULL,0,0,0,0))
+CR_BIND_DERIVED(CFireProjectile, CProjectile, )
 CR_BIND(CFireProjectile::SubParticle, )
 
 CR_REG_METADATA(CFireProjectile,(
@@ -29,9 +29,8 @@ CR_REG_METADATA(CFireProjectile,(
 	CR_MEMBER(particleSize),
 	CR_MEMBER(ageSpeed),
 	CR_MEMBER(subParticles2),
-	CR_MEMBER(subParticles),
-	CR_RESERVED(16)
-	))
+	CR_MEMBER(subParticles)
+))
 
 CR_REG_METADATA_SUB(CFireProjectile, SubParticle, (
 	CR_MEMBER(pos),
@@ -39,9 +38,8 @@ CR_REG_METADATA_SUB(CFireProjectile, SubParticle, (
 	CR_MEMBER(age),
 	CR_MEMBER(maxSize),
 	CR_MEMBER(rotSpeed),
-	CR_MEMBER(smokeType),
-	CR_RESERVED(8)
-	))
+	CR_MEMBER(smokeType)
+))
 
 CFireProjectile::CFireProjectile(
 	const float3& pos,
@@ -103,9 +101,9 @@ void CFireProjectile::Update()
 			subParticles2.push_front(sub);
 		}
 		if (!(ttl & 31)) {
-			// synced code
-			const std::vector<CFeature*>& features = quadField->GetFeaturesExact(emitPos + wind.GetCurrentWind() * 0.7f, emitRadius * 2);
-			const std::vector<CUnit*>& units = quadField->GetUnitsExact(emitPos + wind.GetCurrentWind() * 0.7f, emitRadius * 2);
+			// copy on purpose, since the below can call Lua
+			const std::vector<CFeature*> features = quadField->GetFeaturesExact(emitPos + wind.GetCurrentWind() * 0.7f, emitRadius * 2);
+			const std::vector<CUnit*> units = quadField->GetUnitsExact(emitPos + wind.GetCurrentWind() * 0.7f, emitRadius * 2);
 
 			for (CFeature* f: features) {
 				if (gs->randFloat() > 0.8f) {

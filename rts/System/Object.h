@@ -17,6 +17,7 @@ public:
 
 	CObject();
 	virtual ~CObject();
+
 	void Serialize(creg::ISerializer* ser);
 	void PostLoad();
 

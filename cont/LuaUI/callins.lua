@@ -42,7 +42,9 @@ CallInsList = {
   "UnitCreated",
   "UnitFinished",
   "UnitFromFactory",
+  "UnitReverseBuilt",
   "UnitDestroyed",
+  "RenderUnitDestroyed",
   "UnitTaken",
   "UnitGiven",
   "UnitIdle",
@@ -91,6 +93,12 @@ CallInsList = {
   "AllowResourceTransfer",
 
   "GameProgress",
+
+  "DownloadQueued",
+  "DownloadStarted",
+  "DownloadFinished",
+  "DownloadFailed",
+  "DownloadProgress",
 }
 
 

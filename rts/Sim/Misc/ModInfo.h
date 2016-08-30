@@ -50,7 +50,6 @@ public:
 	bool allowUnitCollisionOverlap;  //< determines if unit footprints are allowed to semi-overlap during collisions
 	bool allowGroundUnitGravity;     //< determines if (ground-)units experience gravity during regular movement
 	bool allowHoverUnitStrafing;     //< determines if (hover-)units carry their momentum sideways when turning
-	bool useClassicGroundMoveType;   //< determines if (ground-)units use the CClassicGroundMoveType path-follower
 
 	// Build behaviour
 	/// Should constructions without builders decay?
@@ -132,6 +131,9 @@ public:
 	bool requireSonarUnderWater;
 	///
 	bool alwaysVisibleOverridesCloaked;
+	/// should _all_ allyteams share the same jammermap
+	bool separateJammers;
+
 
 	enum {
 		FEATURELOS_NONE = 0, FEATURELOS_GAIAONLY, FEATURELOS_GAIAALLIED, FEATURELOS_ALL,
@@ -144,6 +146,8 @@ public:
 	/// which pathfinder system (DEFAULT/legacy or QTPFS) the mod will use
 	int pathFinderSystem;
 	float pfUpdateRate;
+
+	bool allowTake;
 };
 
 extern CModInfo modInfo;

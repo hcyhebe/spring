@@ -398,9 +398,11 @@ void CSelectedUnitsHandlerAI::MakeFrontMove(Command* c,int player)
 
 void CSelectedUnitsHandlerAI::CreateUnitOrder(std::multimap<float,int>& out,int player)
 {
-	const vector<int>& netUnits = selectedUnitsHandler.netSelected[player];
-	for (vector<int>::const_iterator ui = netUnits.begin(); ui != netUnits.end(); ++ui) {
+	const std::vector<int>& netUnits = selectedUnitsHandler.netSelected[player];
+
+	for (auto ui = netUnits.cbegin(); ui != netUnits.cend(); ++ui) {
 		const CUnit* unit = unitHandler->units[*ui];
+
 		if (unit) {
 			const UnitDef* ud = unit->unitDef;
 			float range = unit->maxRange;
@@ -536,14 +538,14 @@ void CSelectedUnitsHandlerAI::SelectAttack(const Command& cmd, int player)
 
 	for (unsigned int t = 0; t < targetsCount; t++) {
 		const CUnit* unit = unitHandler->units[ targets[t] ];
-		const float3 unitPos = queueing ? LastQueuePosition(unit) : float3(unit->midPos);
+		const float3 unitPos = float3(unit->midPos);
 
 		DistInfo di;
 		di.unitID = targets[t];
 		di.dist = (unitPos - midPos).SqLength2D();
 		distVec.push_back(di);
 	}
-	sort(distVec.begin(), distVec.end());
+	stable_sort(distVec.begin(), distVec.end());
 
 	// give the commands
 	for (unsigned int s = 0; s < selectedCount; s++) {
@@ -564,6 +566,7 @@ void CSelectedUnitsHandlerAI::SelectAttack(const Command& cmd, int player)
 
 			if (!queueing || !commandAI->WillCancelQueued(attackCmd)) {
 				commandAI->GiveCommand(attackCmd, false);
+
 				AddUnitSetMaxSpeedCommand(unit, attackCmd.options);
 				// following commands are always queued
 				attackCmd.options |= SHIFT_KEY;
@@ -589,7 +592,7 @@ void CSelectedUnitsHandlerAI::SelectCircleUnits(
 	if (p == NULL)
 		return;
 
-	const vector<CUnit*>& tmpUnits = quadField->GetUnitsExact(pos, radius, false);
+	const std::vector<CUnit*>& tmpUnits = quadField->GetUnitsExact(pos, radius, false);
 
 	const float radiusSqr = radius * radius;
 	const unsigned int count = tmpUnits.size();
@@ -622,7 +625,7 @@ void CSelectedUnitsHandlerAI::SelectRectangleUnits(
 	const float3& pos0,
 	const float3& pos1,
 	int player,
-	vector<int>& units
+	std::vector<int>& units
 ) {
 	units.clear();
 
@@ -637,7 +640,7 @@ void CSelectedUnitsHandlerAI::SelectRectangleUnits(
 	const float3 mins(std::min(pos0.x, pos1.x), 0.0f, std::min(pos0.z, pos1.z));
 	const float3 maxs(std::max(pos0.x, pos1.x), 0.0f, std::max(pos0.z, pos1.z));
 
-	const vector<CUnit*>& tmpUnits = quadField->GetUnitsExact(mins, maxs);
+	const std::vector<CUnit*>& tmpUnits = quadField->GetUnitsExact(mins, maxs);
 
 	const unsigned int count = tmpUnits.size();
 	const int allyTeam = teamHandler->AllyTeam(p->team);
