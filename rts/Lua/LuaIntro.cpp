@@ -26,7 +26,6 @@
 #include "System/EventHandler.h"
 #include "System/Log/ILog.h"
 #include "System/FileSystem/FileHandler.h"
-#include "System/FileSystem/VFSHandler.h"
 #include "System/Config/ConfigHandler.h"
 #include "System/FileSystem/FileSystem.h"
 #include "System/Util.h"
@@ -142,7 +141,7 @@ CLuaIntro::~CLuaIntro()
 }
 
 
-bool CLuaIntro::RemoveSomeOpenGLFunctions(lua_State *L)
+bool CLuaIntro::RemoveSomeOpenGLFunctions(lua_State* L)
 {
 	// remove some spring opengl functions that don't work preloading
 	lua_getglobal(L, "gl"); {
@@ -175,7 +174,7 @@ bool CLuaIntro::RemoveSomeOpenGLFunctions(lua_State *L)
 }
 
 
-bool CLuaIntro::LoadUnsyncedCtrlFunctions(lua_State *L)
+bool CLuaIntro::LoadUnsyncedCtrlFunctions(lua_State* L)
 {
 	#define REGISTER_LUA_CFUNC(x) \
 		lua_pushstring(L, #x);      \
@@ -221,7 +220,7 @@ bool CLuaIntro::LoadUnsyncedCtrlFunctions(lua_State *L)
 }
 
 
-bool CLuaIntro::LoadUnsyncedReadFunctions(lua_State *L)
+bool CLuaIntro::LoadUnsyncedReadFunctions(lua_State* L)
 {
 	#define REGISTER_LUA_CFUNC(x) \
 		lua_pushstring(L, #x);      \
@@ -269,7 +268,7 @@ bool CLuaIntro::LoadUnsyncedReadFunctions(lua_State *L)
 }
 
 
-bool CLuaIntro::LoadSyncedReadFunctions(lua_State *L)
+bool CLuaIntro::LoadSyncedReadFunctions(lua_State* L)
 {
 	#define REGISTER_LUA_CFUNC(x) \
 		lua_pushstring(L, #x);      \

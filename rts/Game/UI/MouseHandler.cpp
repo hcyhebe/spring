@@ -28,7 +28,6 @@
 #include "Rendering/Textures/Bitmap.h"
 #include "Sim/Features/FeatureDef.h"
 #include "Sim/Features/Feature.h"
-#include "Sim/Misc/LosHandler.h"
 #include "Sim/Misc/TeamHandler.h"
 #include "Sim/Units/UnitDef.h"
 #include "Sim/Units/Unit.h"
@@ -97,6 +96,7 @@ CMouseHandler::CMouseHandler()
 	, dragScrollThreshold(0.0f)
 	, scrollx(0.0f)
 	, scrolly(0.0f)
+	, lastClicked(nullptr)
 {
 	const int2 mousepos = IMouseInput::GetInstance()->GetPos();
 	lastx = mousepos.x;
@@ -227,9 +227,10 @@ void CMouseHandler::MouseMove(int x, int y, int dx, int dy)
 	scrollx += lastx - screenCenterX;
 	scrolly += lasty - screenCenterY;
 
-	dir = hide ? camera->GetDir() : camera->CalcPixelDir(x,y);
+	if (camera != nullptr)
+		dir = hide ? camera->GetDir() : camera->CalcPixelDir(x,y);
 
-	if (locked) {
+	if (locked && camHandler != nullptr) {
 		camHandler->GetCurrentController().MouseMove(float3(dx, dy, invertMouse ? -1.0f : 1.0f));
 		return;
 	}
@@ -238,7 +239,7 @@ void CMouseHandler::MouseMove(int x, int y, int dx, int dy)
 	buttons[SDL_BUTTON_LEFT].movement  += movedPixels;
 	buttons[SDL_BUTTON_RIGHT].movement += movedPixels;
 
-	if (!game->IsGameOver()) {
+	if (game != nullptr && !game->IsGameOver()) {
 		playerHandler->Player(gu->myPlayerNum)->currentStats.mousePixels += movedPixels;
 	}
 
@@ -250,7 +251,7 @@ void CMouseHandler::MouseMove(int x, int y, int dx, int dy)
 		inMapDrawer->MouseMove(x, y, dx, dy, activeButton);
 	}
 
-	if (buttons[SDL_BUTTON_MIDDLE].pressed && (activeReceiver == NULL)) {
+	if (buttons[SDL_BUTTON_MIDDLE].pressed && (activeReceiver == NULL) && camHandler != nullptr) {
 		camHandler->GetCurrentController().MouseMove(float3(dx, dy, invertMouse ? -1.0f : 1.0f));
 		unitTracker.Disable();
 		return;
@@ -263,9 +264,10 @@ void CMouseHandler::MousePress(int x, int y, int button)
 	if (button > NUM_BUTTONS)
 		return;
 
-	dir = hide ? camera->GetDir() : camera->CalcPixelDir(x, y);
+	if (camera != nullptr)
+		dir = hide ? camera->GetDir() : camera->CalcPixelDir(x, y);
 
-	if (!game->IsGameOver())
+	if (game != nullptr && !game->IsGameOver())
 		playerHandler->Player(gu->myPlayerNum)->currentStats.mouseClicks++;
 
 	ButtonPressEvt& bp = buttons[button];
@@ -274,7 +276,7 @@ void CMouseHandler::MousePress(int x, int y, int button)
 	bp.time     = gu->gameTime;
 	bp.x        = x;
 	bp.y        = y;
-	bp.camPos   = camera->GetPos();
+	bp.camPos   = camera == nullptr ? ZeroVector : camera->GetPos();
 	bp.dir      = dir;
 	bp.movement = 0;
 
@@ -309,7 +311,7 @@ void CMouseHandler::MousePress(int x, int y, int button)
 
 	std::list<CInputReceiver*>& inputReceivers = GetInputReceivers();
 	std::list<CInputReceiver*>::iterator ri;
-	if (!game->hideInterface) {
+	if (game != nullptr && !game->hideInterface) {
 		for (ri = inputReceivers.begin(); ri != inputReceivers.end(); ++ri) {
 			CInputReceiver* recv=*ri;
 			if (recv && recv->MousePress(x, y, button))
@@ -371,10 +373,15 @@ void CMouseHandler::GetSelectionBoxCoeff(const float3& pos1, const float3& dir1,
 
 void CMouseHandler::MouseRelease(int x, int y, int button)
 {
+	const CUnit *_lastClicked = lastClicked;
+	lastClicked = nullptr;
+
 	if (button > NUM_BUTTONS)
 		return;
 
-	dir = hide ? camera->GetDir() : camera->CalcPixelDir(x, y);
+	if (camera != nullptr)
+		dir = hide ? camera->GetDir() : camera->CalcPixelDir(x, y);
+
 	buttons[button].pressed = false;
 
 	if (inMapDrawer && inMapDrawer->IsDrawMode()){
@@ -404,7 +411,7 @@ void CMouseHandler::MouseRelease(int x, int y, int button)
 		return;
 	}
 
-	if ((button == SDL_BUTTON_LEFT) && !buttons[button].chorded) {
+	if ((button == SDL_BUTTON_LEFT) && !buttons[button].chorded && camera != nullptr) {
 		ButtonPressEvt& bp = buttons[SDL_BUTTON_LEFT];
 
 		if (!KeyInput::GetKeyModState(KMOD_SHIFT) && !KeyInput::GetKeyModState(KMOD_CTRL)) {
@@ -436,11 +443,15 @@ void CMouseHandler::MouseRelease(int x, int y, int button)
 
 			selectedUnitsHandler.HandleUnitBoxSelection(plane1, plane2, plane3, plane4);
 		} else {
-			CUnit* unit;
-			CFeature* feature;
-			TraceRay::GuiTraceRay(camera->GetPos(), dir, globalRendering->viewRange * 1.4f, NULL, unit, feature, false);
+			const CUnit* unit = nullptr;
+			const CFeature* feature = nullptr;
 
-			selectedUnitsHandler.HandleSingleUnitClickSelection(unit, true);
+			TraceRay::GuiTraceRay(camera->GetPos(), dir, globalRendering->viewRange * 1.4f, NULL, unit, feature, false);
+			lastClicked = unit;
+
+			const bool selectType = (bp.lastRelease >= (gu->gameTime - doubleClickTime) && unit == _lastClicked);
+
+			selectedUnitsHandler.HandleSingleUnitClickSelection(const_cast<CUnit*>(unit), true, selectType);
 		}
 
 		bp.lastRelease = gu->gameTime;
@@ -454,7 +465,8 @@ void CMouseHandler::MouseWheel(float delta)
 		return;
 	}
 	delta *= scrollWheelSpeed;
-	camHandler->GetCurrentController().MouseWheelMove(delta);
+	if (camHandler != nullptr)
+		camHandler->GetCurrentController().MouseWheelMove(delta);
 }
 
 
@@ -533,16 +545,18 @@ std::string CMouseHandler::GetCurrentTooltip()
 		}
 	}
 
+	if (guihandler == nullptr || camera == nullptr)
+		return "";
+
 	const string buildTip = guihandler->GetBuildTooltip();
-	if (!buildTip.empty()) {
+	if (!buildTip.empty())
 		return buildTip;
-	}
 
 	const float range = (globalRendering->viewRange * 1.4f);
 	float dist = 0.0f;
 
-	CUnit* unit;
-	CFeature* feature;
+	const CUnit* unit = nullptr;
+	const CFeature* feature = nullptr;
 
 	{
 		dist = TraceRay::GuiTraceRay(camera->GetPos(), dir, range, NULL, unit, feature, true, false, true);
@@ -934,7 +948,7 @@ void CMouseHandler::SafeDeleteCursor(CMouseCursor* cursor)
 
 	for (it = cursorFileMap.begin(); it != cursorFileMap.end(); ) {
 		if (it->second == cursor) {
-			it = set_erase(cursorFileMap, it);
+			it = cursorFileMap.erase(it);
 		} else {
 			++it;
 		}

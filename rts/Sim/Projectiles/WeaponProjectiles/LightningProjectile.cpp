@@ -6,6 +6,7 @@
 #include "Rendering/GL/VertexArray.h"
 #include "Rendering/Textures/TextureAtlas.h"
 #include "Sim/Misc/GlobalSynced.h"
+#include "Sim/Projectiles/ExplosionGenerator.h"
 #include "Sim/Projectiles/ProjectileHandler.h"
 #include "Sim/Weapons/WeaponDef.h"
 
@@ -13,7 +14,7 @@
 	#include "System/Sync/SyncTracer.h"
 #endif
 
-CR_BIND_DERIVED(CLightningProjectile, CWeaponProjectile, (ProjectileParams()))
+CR_BIND_DERIVED(CLightningProjectile, CWeaponProjectile, )
 
 CR_REG_METADATA(CLightningProjectile,(
 	CR_SETFLAG(CF_Synced),
@@ -21,6 +22,7 @@ CR_REG_METADATA(CLightningProjectile,(
 	CR_MEMBER(displacements),
 	CR_MEMBER(displacements2)
 ))
+
 
 CLightningProjectile::CLightningProjectile(const ProjectileParams& params): CWeaponProjectile(params)
 {

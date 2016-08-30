@@ -6,18 +6,19 @@
 #include "Map/Ground.h"
 #include "Rendering/GL/VertexArray.h"
 #include "Rendering/Textures/TextureAtlas.h"
+#include "Sim/Projectiles/ExplosionGenerator.h"
 #include "Sim/Projectiles/ProjectileHandler.h"
 #include "Sim/Weapons/WeaponDef.h"
 #include "System/Sync/SyncTracer.h"
 
-CR_BIND_DERIVED(CEmgProjectile, CWeaponProjectile, (ProjectileParams()))
+CR_BIND_DERIVED(CEmgProjectile, CWeaponProjectile, )
 
 CR_REG_METADATA(CEmgProjectile,(
 	CR_SETFLAG(CF_Synced),
 	CR_MEMBER(intensity),
-	CR_MEMBER(color),
-	CR_RESERVED(8)
+	CR_MEMBER(color)
 ))
+
 
 CEmgProjectile::CEmgProjectile(const ProjectileParams& params): CWeaponProjectile(params)
 {
@@ -78,7 +79,7 @@ void CEmgProjectile::Draw()
 	va->AddVertexTC(drawPos - camera->GetRight() * drawRadius+camera->GetUp() * drawRadius, weaponDef->visuals.texture1->xstart, weaponDef->visuals.texture1->yend,   col);
 }
 
-int CEmgProjectile::ShieldRepulse(CPlasmaRepulser* shield, float3 shieldPos, float shieldForce, float shieldMaxSpeed)
+int CEmgProjectile::ShieldRepulse(const float3& shieldPos, float shieldForce, float shieldMaxSpeed)
 {
 	if (luaMoveCtrl)
 		return 0;

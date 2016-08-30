@@ -12,8 +12,6 @@ struct UnitDef;
 struct Command;
 class CFactory;
 
-typedef void (*FinishBuildCallBackFunc) (CFactory*, const Command&);
-
 class CFactory : public CBuilding
 {
 public:
@@ -21,14 +19,12 @@ public:
 
 	CFactory();
 
-	void PostLoad();
-
 	void StartBuild(const UnitDef* buildeeDef);
 	void UpdateBuild(CUnit* buildee);
 	void FinishBuild(CUnit* buildee);
 	void StopBuild();
 	/// @return whether the to-be-built unit is enqueued
-	unsigned int QueueBuild(const UnitDef* buildeeDef, const Command& buildCmd, FinishBuildCallBackFunc buildCB);
+	unsigned int QueueBuild(const UnitDef* buildeeDef, const Command& buildCmd);
 
 	void Update();
 
@@ -52,7 +48,6 @@ private:
 public:
 	float buildSpeed;
 
-	const UnitDef* curBuildDef;
 	CUnit* curBuild;
 
 	enum {
@@ -62,10 +57,9 @@ public:
 	};
 
 private:
-	int nextBuildUnitDefID;
+	const UnitDef* curBuildDef;
 	int lastBuildUpdateFrame;
 
-	FinishBuildCallBackFunc finishedBuildFunc;
 	Command finishedBuildCommand;
 
 	NanoPieceCache nanoPieceCache;

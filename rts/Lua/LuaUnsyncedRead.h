@@ -15,7 +15,6 @@ class LuaUnsyncedRead {
 	public:
 		static int IsReplay(lua_State* L);
 		static int GetReplayLength(lua_State* L);
-		static int GetModUICtrl(lua_State* L);
 
 		static int GetDrawFrame(lua_State* L);
 		static int GetFrameTimeOffset(lua_State* L);
@@ -43,6 +42,7 @@ class LuaUnsyncedRead {
 		static int GetUnitNoMinimap(lua_State* L);
 		static int GetUnitNoSelect(lua_State* L);
 		static int GetFeatureLuaDraw(lua_State* L);
+		static int GetFeatureNoDraw(lua_State* L);
 
 		static int GetUnitTransformMatrix(lua_State* L);
 		static int GetUnitViewPosition(lua_State* L);
@@ -84,6 +84,7 @@ class LuaUnsyncedRead {
 		static int GetPixelDir(lua_State* L);
 
 		static int GetTimer(lua_State* L);
+		static int GetFrameTimer(lua_State* L);
 		static int DiffTimers(lua_State* L);
 
 		static int GetSoundStreamTime(lua_State* L);
@@ -145,6 +146,15 @@ class LuaUnsyncedRead {
 		static int GetConfigParams(lua_State* L);
 
 		static int GetLogSections(lua_State* L);
+
+		static int GetAllDecals(lua_State* L);
+		static int GetDecalPos(lua_State* L);
+		static int GetDecalSize(lua_State* L);
+		static int GetDecalRotation(lua_State* L);
+		static int GetDecalTexture(lua_State* L);
+		static int GetDecalAlpha(lua_State* L);
+		static int GetDecalType(lua_State* L);
+		static int GetDecalOwner(lua_State* L);
 };
 
 

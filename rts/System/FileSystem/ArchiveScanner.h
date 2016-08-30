@@ -27,9 +27,14 @@ class LuaTable;
 
 namespace modtype
 {
-	static const int primary = 1;
-	static const int hidden = 0;
-	static const int map = 3;
+	enum {
+		hidden = 0,
+		primary = 1,
+		reserved = 2,
+		map = 3,
+		base = 4,
+		menu = 5
+	};
 }
 
 class CArchiveScanner
@@ -58,6 +63,7 @@ public:
 		std::string GetDescription() const { return GetInfoValueString("description"); } /// ex:  Little units blowing up other little units
 		std::string GetMapFile() const { return GetInfoValueString("mapFile"); }         /// in case its a map, store location of smf/sm3 file
 		int GetModType() const { return GetInfoValueInteger("modType"); }                /// 1=primary, 0=hidden, 3=map
+		bool GetOnlyLocal() const { return GetInfoValueBool("onlyLocal"); }              /// if true spring will not listen for incoming connections
 
 		const std::map<std::string, InfoItem>& GetInfo() const { return info; }
 		std::vector<InfoItem> GetInfoItems() const;
@@ -75,6 +81,9 @@ public:
 
 		bool IsValid(std::string& error) const;
 		bool IsEmpty() const { return info.empty(); }
+
+		bool IsGame() const { int mt = GetModType(); return mt == modtype::hidden || mt == modtype::primary; }
+		bool IsMap() const { int mt = GetModType(); return mt == modtype::map; }
 
 		static bool IsReservedKey(const std::string& keyLower);
 		static std::string GetKeyDescription(const std::string& keyLower);
@@ -112,12 +121,13 @@ public:
 
 public:
 	/// checksum of the given archive (without dependencies)
-	unsigned int GetSingleArchiveChecksum(const std::string& name) const;
+	unsigned int GetSingleArchiveChecksum(const std::string& name);
 	/// Calculate checksum of the given archive and all its dependencies
-	unsigned int GetArchiveCompleteChecksum(const std::string& name) const;
+	unsigned int GetArchiveCompleteChecksum(const std::string& name);
 	/// like GetArchiveCompleteChecksum, throws exception if mismatch
-	void CheckArchive(const std::string& name, unsigned checksum) const;
+	void CheckArchive(const std::string& name, unsigned checksum);
 	void ScanArchive(const std::string& fullName, bool checksum = false);
+	void ScanAllDirs();
 
 	std::string ArchiveFromName(const std::string& s) const;
 	std::string NameFromArchive(const std::string& s) const;
@@ -156,7 +166,7 @@ private:
 	};
 
 private:
-	void ScanDirs(const std::vector<std::string>& dirs, bool checksum = false);
+	void ScanDirs(const std::vector<std::string>& dirs);
 	void ScanDir(const std::string& curPath, std::list<std::string>* foundArchives);
 
 	/// scan mapinfo / modinfo lua files
@@ -179,6 +189,9 @@ private:
 	 * Returns 0 if file could not be opened.
 	 */
 	unsigned int GetCRC(const std::string& filename);
+	void ComputeChecksumForArchive(const std::string& filePath);
+
+	bool CheckCachedData(const std::string& fullName, unsigned* modified, bool doChecksum);
 
 	/**
 	 * Returns a value > 0 if the file is rated as a meta-file.

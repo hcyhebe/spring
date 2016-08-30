@@ -356,9 +356,9 @@ int CAICallback::GetUnitGroup(int unitId)
 	return groupId;
 }
 
-const std::vector<CommandDescription>* CAICallback::GetGroupCommands(int groupId)
+const std::vector<const SCommandDescription*>* CAICallback::GetGroupCommands(int groupId)
 {
-	static std::vector<CommandDescription> tempcmds;
+	static std::vector<const SCommandDescription*> tempcmds;
 	return &tempcmds;
 }
 
@@ -394,9 +394,9 @@ int CAICallback::GiveOrder(int unitId, Command* c)
 	return 0;
 }
 
-const std::vector<CommandDescription>* CAICallback::GetUnitCommands(int unitId)
+const std::vector<const SCommandDescription*>* CAICallback::GetUnitCommands(int unitId)
 {
-	const std::vector<CommandDescription>* unitCommands = NULL;
+	const std::vector<const SCommandDescription*>* unitCommands = NULL;
 
 	const CUnit* unit = GetMyTeamUnit(unitId);
 	if (unit) {
@@ -829,29 +829,6 @@ static int FilterUnitsVector(const std::vector<CUnit*>& units, int* unitIds, int
 
 	return a;
 }
-static int FilterUnitsList(const std::list<CUnit*>& units, int* unitIds, int unitIds_max, bool (*includeUnit)(const CUnit*) = NULL)
-{
-	int a = 0;
-
-	if (unitIds_max < 0) {
-		unitIds = NULL;
-		unitIds_max = MAX_UNITS;
-	}
-
-	std::list<CUnit*>::const_iterator ui;
-	for (ui = units.begin(); (ui != units.end()) && (a < unitIds_max); ++ui) {
-		CUnit* u = *ui;
-
-		if ((includeUnit == NULL) || (*includeUnit)(u)) {
-			if (unitIds != NULL) {
-				unitIds[a] = u->id;
-			}
-			a++;
-		}
-	}
-
-	return a;
-}
 
 
 static inline bool unit_IsNeutral(const CUnit* unit) {
@@ -913,14 +890,14 @@ int CAICallback::GetEnemyUnits(int* unitIds, int unitIds_max)
 {
 	verify();
 	myAllyTeamId = teamHandler->AllyTeam(team);
-	return FilterUnitsList(unitHandler->activeUnits, unitIds, unitIds_max, &unit_IsEnemyAndInLos);
+	return FilterUnitsVector(unitHandler->activeUnits, unitIds, unitIds_max, &unit_IsEnemyAndInLos);
 }
 
 int CAICallback::GetEnemyUnitsInRadarAndLos(int* unitIds, int unitIds_max)
 {
 	verify();
 	myAllyTeamId = teamHandler->AllyTeam(team);
-	return FilterUnitsList(unitHandler->activeUnits, unitIds, unitIds_max, &unit_IsEnemyAndInLosOrRadar);
+	return FilterUnitsVector(unitHandler->activeUnits, unitIds, unitIds_max, &unit_IsEnemyAndInLosOrRadar);
 }
 
 int CAICallback::GetEnemyUnits(int* unitIds, const float3& pos, float radius,
@@ -937,7 +914,7 @@ int CAICallback::GetFriendlyUnits(int* unitIds, int unitIds_max)
 {
 	verify();
 	myAllyTeamId = teamHandler->AllyTeam(team);
-	return FilterUnitsList(unitHandler->activeUnits, unitIds, unitIds_max, &unit_IsFriendly);
+	return FilterUnitsVector(unitHandler->activeUnits, unitIds, unitIds_max, &unit_IsFriendly);
 }
 
 int CAICallback::GetFriendlyUnits(int* unitIds, const float3& pos, float radius,
@@ -954,7 +931,7 @@ int CAICallback::GetNeutralUnits(int* unitIds, int unitIds_max)
 {
 	verify();
 	myAllyTeamId = teamHandler->AllyTeam(team);
-	return FilterUnitsList(unitHandler->activeUnits, unitIds, unitIds_max, &unit_IsNeutralAndInLos);
+	return FilterUnitsVector(unitHandler->activeUnits, unitIds, unitIds_max, &unit_IsNeutralAndInLos);
 }
 
 int CAICallback::GetNeutralUnits(int* unitIds, const float3& pos, float radius, int unitIds_max)
@@ -1029,17 +1006,18 @@ const float* CAICallback::GetSlopeMap()
 
 const unsigned short* CAICallback::GetLosMap()
 {
-	return &losHandler->losMaps[teamHandler->AllyTeam(team)].front();
+	return &losHandler->los.losMaps[teamHandler->AllyTeam(team)].front();
 }
 
 const unsigned short* CAICallback::GetRadarMap()
 {
-	return &radarHandler->radarMaps[teamHandler->AllyTeam(team)].front();
+	return &losHandler->radar.losMaps[teamHandler->AllyTeam(team)].front();
 }
 
 const unsigned short* CAICallback::GetJammerMap()
 {
-	return &radarHandler->jammerMaps[teamHandler->AllyTeam(team)].front();
+	const int jammerAllyTeam = modInfo.separateJammers ? teamHandler->AllyTeam(team) : 0;
+	return &losHandler->jammer.losMaps[jammerAllyTeam].front();
 }
 
 const unsigned char* CAICallback::GetMetalMap()
@@ -1121,28 +1099,35 @@ void CAICallback::DeleteFigureGroup(int group)
 
 
 
-void CAICallback::DrawUnit(const char* unitName, const float3& pos,
-		float rotation, int lifetime, int teamId, bool transparent,
-		bool drawBorder, int facing)
-{
+void CAICallback::DrawUnit(
+	const char* unitName,
+	const float3& pos,
+	float rotation,
+	int lifetime,
+	int teamId,
+	bool transparent,
+	bool drawBorder,
+	int facing
+) {
 	CUnitDrawer::TempDrawUnit tdu;
-	tdu.unitdef = unitDefHandler->GetUnitDefByName(unitName);
-	if (!tdu.unitdef) {
+	tdu.unitDef = unitDefHandler->GetUnitDefByName(unitName);
+
+	if (tdu.unitDef == nullptr) {
 		LOG_L(L_WARNING, "Unknown unit in CAICallback::DrawUnit %s", unitName);
 		return;
 	}
+
+	tdu.team = teamId;
+	tdu.facing = facing;
+	tdu.timeout = gs->frameNum + lifetime;
+
 	tdu.pos = pos;
 	tdu.rotation = rotation;
-	tdu.team = teamId;
-	tdu.drawBorder = drawBorder;
-	tdu.facing = facing;
-	std::pair<int, CUnitDrawer::TempDrawUnit> tp(gs->frameNum + lifetime, tdu);
 
-	if (transparent) {
-		unitDrawer->tempTransparentDrawUnits.insert(tp);
-	} else {
-		unitDrawer->tempDrawUnits.insert(tp);
-	}
+	tdu.drawAlpha = transparent;
+	tdu.drawBorder = drawBorder;
+
+	unitDrawer->AddTempDrawUnit(tdu);
 }
 
 
@@ -1379,9 +1364,6 @@ bool CAICallback::GetValue(int id, void *data)
 	switch (id) {
 		case AIVAL_NUMDAMAGETYPES:{
 			*((int*)data) = damageArrayHandler->GetNumTypes();
-			return true;
-		}case AIVAL_EXCEPTION_HANDLING:{
-			*(bool*)data = CEngineOutHandler::CatchExceptions();
 			return true;
 		}case AIVAL_MAP_CHECKSUM:{
 			*(unsigned int*)data = readMap->GetMapChecksum();
@@ -1670,8 +1652,8 @@ bool CAICallback::GetProperty(int unitId, int property, void* data)
 				}
 				return true;
 			}
-			case AIVAL_CURRENT_FUEL: {
-				(*(float*)data) = unit->currentFuel;
+			case AIVAL_CURRENT_FUEL: { //Deprecated
+				(*(float*)data) = 0;
 				return true;
 			}
 			case AIVAL_STOCKPILED: {

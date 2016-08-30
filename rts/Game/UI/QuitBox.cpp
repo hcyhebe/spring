@@ -317,7 +317,7 @@ void CQuitBox::MouseRelease(int x,int y,int button)
 
 				if (!FileSystem::FileExists(saveFileName)) {
 					LOG("Saving game to %s", saveFileName.c_str());
-					ILoadSaveHandler* ls = ILoadSaveHandler::Create();
+					ILoadSaveHandler* ls = ILoadSaveHandler::Create(true);
 					ls->mapName = gameSetup->mapName;
 					ls->modName = modInfo.filename;
 					ls->SaveGame(saveFileName);
@@ -332,7 +332,7 @@ void CQuitBox::MouseRelease(int x,int y,int button)
 		LOG("[QuitBox] user exited to menu");
 
 		// signal SpringApp
-		gameSetup->setupText = "";
+		gu->reloadScript = "";
 		gu->globalReload = true;
 	}
 	else if (InBox(mx, my, box + quitBox)) {

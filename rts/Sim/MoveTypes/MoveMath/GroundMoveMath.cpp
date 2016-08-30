@@ -33,14 +33,14 @@ float CMoveMath::GroundSpeedMod(const MoveDef& moveDef, float height, float slop
 	// Directional speed is now equal to regular except when:
 	// 1) Climbing out of places which are below max depth.
 	// 2) Climbing hills is slower.
-	
+
 	float speedMod = 0.0f;
 
 	if (slope > moveDef.maxSlope)
 		return speedMod;
 
 	// is this square below our maxWaterDepth and are we going further downhill?
-	if ((dirSlopeMod < 0.0f) && (-height > moveDef.depth))
+	if ((dirSlopeMod <= 0.0f) && (-height > moveDef.depth))
 		return speedMod;
 
 	// slope-mod (speedMod is not increased or decreased by downhill slopes)

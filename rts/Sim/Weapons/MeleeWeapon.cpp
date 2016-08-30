@@ -5,10 +5,7 @@
 #include "Sim/Units/Unit.h"
 
 CR_BIND_DERIVED(CMeleeWeapon, CWeapon, (NULL, NULL))
-
-CR_REG_METADATA(CMeleeWeapon,(
-	CR_RESERVED(8)
-))
+CR_REG_METADATA(CMeleeWeapon, )
 
 //////////////////////////////////////////////////////////////////////
 // Construction/Destruction
@@ -19,7 +16,7 @@ CMeleeWeapon::CMeleeWeapon(CUnit* owner, const WeaponDef* def): CWeapon(owner, d
 }
 
 
-bool CMeleeWeapon::HaveFreeLineOfFire(const float3 pos, const SWeaponTarget& trg) const
+bool CMeleeWeapon::HaveFreeLineOfFire(const float3 pos, const SWeaponTarget& trg, bool useMuzzle) const
 {
 	return true;
 }
@@ -27,9 +24,9 @@ bool CMeleeWeapon::HaveFreeLineOfFire(const float3 pos, const SWeaponTarget& trg
 void CMeleeWeapon::FireImpl(const bool scriptCall)
 {
 	if (currentTarget.type == Target_Unit) {
-		const float3 impulseVec = wantedDir * owner->mass * weaponDef->damages.impulseFactor;
+		const float3 impulseVec = wantedDir * owner->mass * damages->impulseFactor;
 
 		// the heavier the unit, the more impulse it does
-		currentTarget.unit->DoDamage(weaponDef->damages, impulseVec, owner, weaponDef->id, -1);
+		currentTarget.unit->DoDamage(*damages, impulseVec, owner, weaponDef->id, -1);
 	}
 }

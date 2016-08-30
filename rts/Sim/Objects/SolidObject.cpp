@@ -17,10 +17,12 @@ const float CSolidObject::DEFAULT_MASS = 1e5f;
 const float CSolidObject::MINIMUM_MASS = 1e0f; // 1.0f
 const float CSolidObject::MAXIMUM_MASS = 1e6f;
 
-CR_BIND_DERIVED(CSolidObject, CWorldObject, )
+CR_BIND_DERIVED_INTERFACE(CSolidObject, CWorldObject)
 CR_REG_METADATA(CSolidObject,
 (
 	CR_MEMBER(health),
+	CR_MEMBER(maxHealth),
+
 	CR_MEMBER(mass),
 	CR_MEMBER(crushResistance),
 
@@ -29,8 +31,9 @@ CR_REG_METADATA(CSolidObject,
 	CR_MEMBER(blockEnemyPushing),
 	CR_MEMBER(blockHeightChanges),
 
-	CR_MEMBER(luaDraw),
-	CR_MEMBER(noSelect),
+	CR_MEMBER_UN(noDraw),
+	CR_MEMBER_UN(luaDraw),
+	CR_MEMBER_UN(noSelect),
 
 	CR_MEMBER(xsize),
 	CR_MEMBER(zsize),
@@ -44,11 +47,15 @@ CR_REG_METADATA(CSolidObject,
 	CR_MEMBER(allyteam),
 
 	CR_MEMBER(tempNum),
+	CR_MEMBER(lastHitPieceFrame),
 
-	CR_MEMBER(objectDef),
 	CR_MEMBER(moveDef),
+
+	CR_MEMBER(localModel),
 	CR_MEMBER(collisionVolume),
-	CR_IGNORED(groundDecal),
+	CR_MEMBER(lastHitPiece),
+
+	CR_IGNORED(groundDecal), // loaded from render*Created
 
 	CR_MEMBER(frontdir),
 	CR_MEMBER(rightdir),
@@ -68,12 +75,18 @@ CR_REG_METADATA(CSolidObject,
 	CR_IGNORED(blockMap), // reloaded in CUnit's PostLoad
 	CR_MEMBER(yardOpen),
 
-	CR_MEMBER(buildFacing)
+	CR_MEMBER(buildFacing),
+	CR_MEMBER(modParams),
+
+	CR_POSTLOAD(PostLoad)
+
 ))
 
 
 CSolidObject::CSolidObject():
 	health(0.0f),
+	maxHealth(1.0f),
+
 	mass(DEFAULT_MASS),
 	crushResistance(0.0f),
 
@@ -82,6 +95,7 @@ CSolidObject::CSolidObject():
 	blockEnemyPushing(true),
 	blockHeightChanges(false),
 
+	noDraw(false),
 	luaDraw(false),
 	noSelect(false),
 
@@ -100,11 +114,12 @@ CSolidObject::CSolidObject():
 	allyteam(0),
 
 	tempNum(0),
+	lastHitPieceFrame(-1),
 
-	objectDef(NULL),
-	moveDef(NULL),
-	collisionVolume(NULL),
-	groundDecal(NULL),
+	moveDef(nullptr),
+
+	lastHitPiece(nullptr),
+	groundDecal(nullptr),
 
 	frontdir( FwdVector),
 	rightdir(-RgtVector),
@@ -115,20 +130,25 @@ CSolidObject::CSolidObject():
 
 	dragScales(OnesVector),
 
-	blockMap(NULL),
+	blockMap(nullptr),
 	yardOpen(false),
 	buildFacing(0)
 {
 }
 
-CSolidObject::~CSolidObject() {
-	ClearCollidableStateBit(CSTATE_BIT_SOLIDOBJECTS | CSTATE_BIT_PROJECTILES | CSTATE_BIT_QUADMAPRAYS);
 
-	delete collisionVolume;
-	collisionVolume = NULL;
+void CSolidObject::PostLoad()
+{
+	model = GetDef()->LoadModel();
+	if (model == nullptr)
+		return;
+
+	localModel.SetModel(model, false);
 }
 
-void CSolidObject::UpdatePhysicalState(float eps) {
+
+void CSolidObject::UpdatePhysicalState(float eps)
+{
 	const float gh = CGround::GetHeightReal(pos.x, pos.z);
 	const float wh = std::max(gh, 0.0f);
 
@@ -172,7 +192,8 @@ void CSolidObject::UpdatePhysicalState(float eps) {
 }
 
 
-bool CSolidObject::SetVoidState() {
+bool CSolidObject::SetVoidState()
+{
 	if (IsInVoid())
 		return false;
 
@@ -186,11 +207,12 @@ bool CSolidObject::SetVoidState() {
 	SetPhysicalStateBit(PSTATE_BIT_INVOID);
 
 	UnBlock();
-	collisionVolume->SetIgnoreHits(true);
+	collisionVolume.SetIgnoreHits(true);
 	return true;
 }
 
-bool CSolidObject::ClearVoidState() {
+bool CSolidObject::ClearVoidState()
+{
 	if (!IsInVoid())
 		return false;
 
@@ -200,23 +222,30 @@ bool CSolidObject::ClearVoidState() {
 	ClearPhysicalStateBit(PSTATE_BIT_INVOID);
 
 	Block();
-	collisionVolume->SetIgnoreHits(false);
+	collisionVolume.SetIgnoreHits(false);
 	return true;
 }
 
-void CSolidObject::UpdateVoidState(bool set) {
+void CSolidObject::UpdateVoidState(bool set)
+{
 	if (set) {
 		SetVoidState();
 	} else {
 		ClearVoidState();
 	}
 
-	noSelect = (set || !objectDef->selectable);
+	noSelect = (set || !GetDef()->selectable);
 }
 
 
+void CSolidObject::SetMass(float newMass)
+{
+	mass = Clamp(newMass, MINIMUM_MASS, MAXIMUM_MASS);
+}
 
-void CSolidObject::UnBlock() {
+
+void CSolidObject::UnBlock()
+{
 	if (!IsBlocking())
 		return;
 
@@ -224,7 +253,8 @@ void CSolidObject::UnBlock() {
 	assert(!IsBlocking());
 }
 
-void CSolidObject::Block() {
+void CSolidObject::Block()
+{
 	// no point calling this if object is not
 	// collidable in principle, but simplifies
 	// external code to allow it
@@ -314,7 +344,8 @@ int2 CSolidObject::GetMapPos(const float3& position) const
 	return mp;
 }
 
-float3 CSolidObject::GetDragAccelerationVec(const float4& params) const {
+float3 CSolidObject::GetDragAccelerationVec(const float4& params) const
+{
 	// KISS: use the cross-sectional area of a sphere, object shapes are complex
 	// this is a massive over-estimation so pretend the radius is in centimeters
 	// other units as normal: mass in kg, speed in elmos/frame, density in kg/m^3
@@ -323,9 +354,9 @@ float3 CSolidObject::GetDragAccelerationVec(const float4& params) const {
 	//
 	const float3 speedSignVec = float3(Sign(speed.x), Sign(speed.y), Sign(speed.z));
 	const float3 dragScaleVec = float3(
-		IsInAir()    * dragScales.x * (0.5f * params.x * params.z * (M_PI * sqRadius * 0.01f * 0.01f)), // air
-		IsInWater()  * dragScales.y * (0.5f * params.y * params.z * (M_PI * sqRadius * 0.01f * 0.01f)), // water
-		IsOnGround() * dragScales.z * (                  params.w * (                           mass))  // ground
+		IsInAir()    * dragScales.x * (0.5f * params.x * params.z * (PI * sqRadius * 0.01f * 0.01f)), // air
+		IsInWater()  * dragScales.y * (0.5f * params.y * params.z * (PI * sqRadius * 0.01f * 0.01f)), // water
+		IsOnGround() * dragScales.z * (                  params.w * (                         mass))  // ground
 	);
 
 	float3 dragAccelVec;
@@ -357,7 +388,8 @@ float3 CSolidObject::GetDragAccelerationVec(const float4& params) const {
 	return dragAccelVec;
 }
 
-float3 CSolidObject::GetWantedUpDir(bool useGroundNormal) const {
+float3 CSolidObject::GetWantedUpDir(bool useGroundNormal) const
+{
 	// NOTE:
 	//   for aircraft IsOnGround is already factored into useGroundNormal
 	//   for ground-units the situation is more complicated because 1) it
@@ -367,9 +399,9 @@ float3 CSolidObject::GetWantedUpDir(bool useGroundNormal) const {
 	//   gravity, ...
 	//
 	const float3 gn = CGround::GetSmoothNormal(pos.x, pos.z) * (    useGroundNormal);
-	const float3 wn =                             UpVector  * (1 - useGroundNormal);
+	const float3 wn =                              UpVector  * (1 - useGroundNormal);
 
-	if (moveDef == NULL) {
+	if (moveDef == nullptr) {
 		// aircraft cannot use updir reliably or their
 		// coordinate-system would degenerate too much
 		// over time without periodic re-ortho'ing
@@ -395,7 +427,19 @@ float3 CSolidObject::GetWantedUpDir(bool useGroundNormal) const {
 
 
 
-void CSolidObject::SetHeadingFromDirection() {
+void CSolidObject::SetDirVectorsEuler(const float3 angles)
+{
+	CMatrix44f matrix;
+
+	// our system is left-handed, so R(X)R(Y)R(Z) is really T(R(-Z)R(-Y)R(-X))
+	// whenever these angles are retrieved, the handedness is converted again
+	SetDirVectors(matrix.RotateEulerXYZ(angles));
+	SetHeadingFromDirection();
+	UpdateMidAndAimPos();
+}
+
+void CSolidObject::SetHeadingFromDirection()
+{
 	heading = GetHeadingFromVector(frontdir.x, frontdir.z);
 }
 
@@ -409,9 +453,10 @@ void CSolidObject::UpdateDirVectors(bool useGroundNormal)
 
 
 
-void CSolidObject::ForcedSpin(const float3& newDir) {
+void CSolidObject::ForcedSpin(const float3& newDir)
+{
 	// new front-direction should be normalized
-	assert(math::fabsf(newDir.SqLength() - 1.0f) <= float3::NORMALIZE_EPS);
+	assert(math::fabsf(newDir.SqLength() - 1.0f) <= float3::cmp_eps());
 
 	// if zdir is parallel to world-y, use heading-vector
 	// (or its inverse) as auxiliary to avoid degeneracies
@@ -430,7 +475,8 @@ void CSolidObject::ForcedSpin(const float3& newDir) {
 
 
 
-void CSolidObject::Kill(CUnit* killer, const float3& impulse, bool crushed) {
+void CSolidObject::Kill(CUnit* killer, const float3& impulse, bool crushed)
+{
 	UpdateVoidState(false);
 
 	if (crushed) {

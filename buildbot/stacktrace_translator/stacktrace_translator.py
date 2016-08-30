@@ -36,7 +36,7 @@ TESTFILE = os.path.join(WWWROOT, "default/release/93.2.1-56-gdca244e/win32/{rele
 # Match common pre- and suffix on infolog lines. This also allows
 # "empty" prefixes followed by any amount of trailing whitespace.
 # the a-zA-Z class can be "Warning" or "Error"
-RE_PREFIX = r'^(?:\[(?:f=)?\s*\d+\]\s*)?(?:[a-zA-Z]+:)\s*'
+RE_PREFIX = r'^(?:\[(?:f=)?\s*-?\d+\]\s*)?(?:[a-zA-Z]+:)\s*'
 RE_SUFFIX = r'(?:[\r\n]+$)?'
 
 # Match stackframe lines, captures the module name and the address.
@@ -83,7 +83,7 @@ RE_VERSION_LINES = [
 #RE_VERSION_DETAILS = re.compile(RE_CONFIG + RE_BRANCH + RE_REV + r'\s')
 
 # Match filename of file with debugging symbols, capture module name.
-RE_DEBUG_FILENAME = '.*_spring_dbg.7z'
+RE_DEBUG_FILENAME = '.*_spring_dbg.7z$'
 
 
 
@@ -217,7 +217,7 @@ def get_modules(dbgfile):
 	if stderr:
 		log.debug('%s stderr: %s' % (SEVENZIP, stderr))
 	if sevenzip.returncode != 0:
-		fatal('%s exited with status %s' % (SEVENZIP, sevenzip.returncode))
+		fatal('%s exited with status %s %s %s' % (SEVENZIP, sevenzip.returncode, stdout, stderr))
 
 	files = []
 	for line in stdout.split('\n'):
@@ -424,7 +424,12 @@ def translate_stacktrace(infolog, dbgsymdir = None):
 		raise FatalError('unhandled exception')
 
 	log.info('----- End of translation process -----')
-	return translated_stacktrace
+	return  {
+			"config": config,
+			"branch": branch,
+			"rev" : rev,
+			"stacktrace": translated_stacktrace,
+		}
 
 
 def run_xmlrpc_server():

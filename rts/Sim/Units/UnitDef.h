@@ -31,7 +31,6 @@ struct UnitDefWeapon {
 	const WeaponDef* def;
 	int slavedTo;
 
-	float fuelUsage; /// How many seconds of fuel it costs for the owning unit to fire this weapon
 	float maxMainDirAngleDif;
 
 	unsigned int badTargetCat;
@@ -196,6 +195,9 @@ public:
 	///< (only non-mobile ground units can have these)
 	std::vector<YardMapStatus> yardmap;
 
+	///< buildingMask used to disallow construction on certain map squares
+	boost::uint16_t buildingMask;
+
 	std::vector<std::string> modelCEGTags;
 	std::vector<std::string> pieceCEGTags;
 
@@ -347,10 +349,6 @@ public:
 	bool showNanoFrame;								///< Does the nano frame animation get shown during construction?
 	bool showNanoSpray;								///< Does nano spray get shown at all?
 	float3 nanoColor;								///< If nano spray is displayed what color is it?
-
-	float maxFuel;									///< max flight time in seconds before the aircraft needs to return to a air repair bay to refuel
-	float refuelTime;								///< time to fully refuel unit
-	float minAirBasePower;							///< min build power for airbases that this aircraft can land on
 
 	int maxThisUnit;                                ///< number of units of this type allowed simultaneously in the game
 

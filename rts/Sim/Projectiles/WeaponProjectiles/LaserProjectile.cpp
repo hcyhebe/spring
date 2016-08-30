@@ -5,15 +5,16 @@
 #include "LaserProjectile.h"
 #include "Map/Ground.h"
 #include "Rendering/GL/VertexArray.h"
+#include "Sim/Projectiles/ExplosionGenerator.h"
 #include "Sim/Projectiles/ProjectileHandler.h"
-#include "Sim/Projectiles/Unsynced/SimpleParticleSystem.h"
+#include "Rendering/Env/Particles/Classes/SimpleParticleSystem.h"
 #include "Sim/Weapons/WeaponDef.h"
 
 #ifdef TRACE_SYNC
 	#include "System/Sync/SyncTracer.h"
 #endif
 
-CR_BIND_DERIVED(CLaserProjectile, CWeaponProjectile, (ProjectileParams()))
+CR_BIND_DERIVED(CLaserProjectile, CWeaponProjectile, )
 
 CR_REG_METADATA(CLaserProjectile,(
 	CR_SETFLAG(CF_Synced),
@@ -27,6 +28,7 @@ CR_REG_METADATA(CLaserProjectile,(
 	CR_MEMBER(intensityFalloff),
 	CR_MEMBER(midtexx)
 ))
+
 
 CLaserProjectile::CLaserProjectile(const ProjectileParams& params): CWeaponProjectile(params)
 	, speedf(0.0f)
@@ -271,7 +273,7 @@ void CLaserProjectile::Draw()
 	}
 }
 
-int CLaserProjectile::ShieldRepulse(CPlasmaRepulser* shield, float3 shieldPos, float shieldForce, float shieldMaxSpeed)
+int CLaserProjectile::ShieldRepulse(const float3& shieldPos, float shieldForce, float shieldMaxSpeed)
 {
 	if (luaMoveCtrl)
 		return 0;

@@ -7,8 +7,9 @@
 
 class CEmgProjectile : public CWeaponProjectile
 {
-	CR_DECLARE(CEmgProjectile)
+	CR_DECLARE_DERIVED(CEmgProjectile)
 public:
+	CEmgProjectile() { }
 	CEmgProjectile(const ProjectileParams& params);
 
 	void Update() override;
@@ -16,8 +17,7 @@ public:
 
 	virtual int GetProjectilesCount() const override;
 
-	int ShieldRepulse(CPlasmaRepulser* shield, float3 shieldPos,
-			float shieldForce, float shieldMaxSpeed) override;
+	int ShieldRepulse(const float3& shieldPos, float shieldForce, float shieldMaxSpeed) override;
 
 private:
 	float intensity;

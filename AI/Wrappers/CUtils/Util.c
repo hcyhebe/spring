@@ -646,7 +646,8 @@ bool util_makeDir(const char* dirPath, bool recursive) {
 }
 
 bool util_getParentDir(char* path) {
-
+	if (path == NULL)
+		return false;
 	util_removeTrailingSlash(path);
 
 	char* ptr = strrchr(path, '/'); // search char from end reverse
@@ -858,14 +859,15 @@ static bool util_parseProperty(const char* propLine,
 
 	return true;
 }
+
+#define MAXLINELENGTH 2048
 int util_parsePropertiesFile(const char* propertiesFile,
 		const char* keys[], const char* values[], int maxProperties) {
 
 	int numProperties = 0;
 
-	static const int maxLineLength = 2048;
 	FILE* file;
-	char line[maxLineLength + 1];
+	char line[MAXLINELENGTH + 1];
 
 	file = fopen(propertiesFile , "r");
 	if (file == NULL) {
@@ -876,7 +878,7 @@ int util_parsePropertiesFile(const char* propertiesFile,
 	bool propertyFound = false;
 	while (numProperties < maxProperties) {
 		// returns NULL on error or EOF
-		error = fgets(line, maxLineLength + 1, file);
+		error = fgets(line, MAXLINELENGTH + 1, file);
 		if (error == NULL) {
 			break;
 		}

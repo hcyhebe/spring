@@ -36,8 +36,7 @@ CR_REG_METADATA(CScriptMoveType, (
 	CR_MEMBER(shotStop),
 	CR_MEMBER(slopeStop),
 	CR_MEMBER(collideStop),
-	CR_MEMBER(scriptNotify),
-	CR_RESERVED(64)
+	CR_MEMBER(scriptNotify)
 ))
 
 
@@ -81,19 +80,6 @@ CScriptMoveType::~CScriptMoveType()
 	owner->UnBlock();
 }
 
-inline void CScriptMoveType::CalcDirections()
-{
-	CMatrix44f matrix;
-	matrix.RotateY(-rot.y);
-	matrix.RotateX(-rot.x);
-	matrix.RotateZ(-rot.z);
-
-	owner->SetDirVectors(matrix);
-	owner->UpdateMidAndAimPos();
-	owner->SetHeadingFromDirection();
-}
-
-
 
 void CScriptMoveType::CheckNotify()
 {
@@ -111,8 +97,7 @@ void CScriptMoveType::CheckNotify()
 bool CScriptMoveType::Update()
 {
 	if (useRotVel) {
-		rot += rotVel;
-		CalcDirections();
+		owner->SetDirVectorsEuler(rot += rotVel);
 	}
 
 	if (extrapolate) {
@@ -213,8 +198,7 @@ void CScriptMoveType::SetRelativeVelocity(const float3& _relVel)
 
 void CScriptMoveType::SetRotation(const float3& _rot)
 {
-	rot = _rot;
-	CalcDirections();
+	owner->SetDirVectorsEuler(rot = _rot);
 }
 
 

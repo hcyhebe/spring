@@ -23,10 +23,11 @@
 #endif
 #include "ExternalAI/IAILibraryManager.h"
 #include "ExternalAI/SkirmishAIHandler.h"
-#include "Game/GUI/PlayerRoster.h"
 #include "Game/Players/Player.h"
 #include "Game/Players/PlayerHandler.h"
+#include "Game/UI/PlayerRoster.h"
 #include "Net/GameServer.h"
+#include "Map/Ground.h"
 #include "Map/MetalMap.h"
 #include "Map/ReadMap.h"
 #include "Map/SMF/SMFGroundDrawer.h"
@@ -46,6 +47,7 @@
 #include "Rendering/Screenshot.h"
 #include "Rendering/ShadowHandler.h"
 #include "Rendering/TeamHighlight.h"
+#include "Rendering/LuaObjectDrawer.h"
 #include "Rendering/UnitDrawer.h"
 #include "Rendering/VerticalSync.h"
 #include "Rendering/Map/InfoTexture/IInfoTextureHandler.h"
@@ -54,6 +56,8 @@
 #include "Lua/LuaUI.h"
 #include "Sim/MoveTypes/MoveDefHandler.h"
 #include "Sim/Misc/TeamHandler.h"
+#include "Sim/Misc/ModInfo.h"
+#include "Sim/Units/UnitDef.h"
 #include "Sim/Units/UnitDefHandler.h"
 #include "Sim/Units/Scripts/UnitScript.h"
 #include "Game/UI/Groups/GroupHandler.h"
@@ -296,7 +300,7 @@ public:
 			LOG_L(L_WARNING, "Shadows are disabled; change your configuration and restart to use them");
 			return true;
 		}
-		if (!shadowHandler->shadowsSupported) {
+		if (!CShadowHandler::ShadowsSupported()) {
 			LOG_L(L_WARNING, "Your hardware/driver setup does not support shadows");
 			return true;
 		}
@@ -312,14 +316,15 @@ public:
 class WaterActionExecutor : public IUnsyncedActionExecutor {
 public:
 	WaterActionExecutor() : IUnsyncedActionExecutor("Water",
-			"Set water rendering mode: 0=basic, 1=reflective, 2=dynamic"
-			", 3=reflective&refractive?, 4=bump-mapped") {}
+		"Set water rendering mode: 0=basic, 1=reflective, 2=dynamic"
+		", 3=reflective&refractive, 4=bump-mapped") {}
 
-	bool Execute(const UnsyncedAction& action) const {
-
+	bool Execute(const UnsyncedAction& action) const
+	{
 		int nextWaterRendererMode = 0;
-		if (!action.GetArgs().empty()) {
-			nextWaterRendererMode = std::max(0, atoi(action.GetArgs().c_str()) % IWater::NUM_WATER_RENDERERS);
+
+		if (!(action.GetArgs()).empty()) {
+			nextWaterRendererMode = atoi((action.GetArgs()).c_str());
 		} else {
 			nextWaterRendererMode = -1;
 		}
@@ -792,7 +797,7 @@ public:
 							aiShortName.c_str(), aiVersion.c_str());
 					badArgs = true;
 				} else {
-					const CSkirmishAILibraryInfo* aiLibInfo = aiLibManager->GetSkirmishAIInfos().find(aiKey)->second;
+					const CSkirmishAILibraryInfo& aiLibInfo = aiLibManager->GetSkirmishAIInfos().find(aiKey)->second;
 
 					SkirmishAIData aiData;
 					aiData.name       = (aiName != "") ? aiName : aiShortName;
@@ -800,12 +805,12 @@ public:
 					aiData.hostPlayer = gu->myPlayerNum;
 					aiData.shortName  = aiShortName;
 					aiData.version    = aiVersion;
-					std::map<std::string, std::string>::const_iterator o;
-					for (o = aiOptions.begin(); o != aiOptions.end(); ++o) {
+
+					for (auto o = aiOptions.cbegin(); o != aiOptions.cend(); ++o)
 						aiData.optionKeys.push_back(o->first);
-					}
+
 					aiData.options    = aiOptions;
-					aiData.isLuaAI    = aiLibInfo->IsLuaAI();
+					aiData.isLuaAI    = aiLibInfo.IsLuaAI();
 
 					skirmishAIHandler.CreateLocalSkirmishAI(aiData);
 				}
@@ -1384,28 +1389,13 @@ public:
 			"Switches fullscreen mode") {}
 
 	bool Execute(const UnsyncedAction& action) const {
+		bool b;
 		if (!action.GetArgs().empty()) {
-			globalRendering->fullScreen = (atoi(action.GetArgs().c_str()) != 0);
+			b = (atoi(action.GetArgs().c_str()) != 0);
 		} else {
-			globalRendering->fullScreen = !globalRendering->fullScreen;
+			b = !globalRendering->fullScreen;
 		}
-
-		const int2 res = globalRendering->GetWantedViewSize(globalRendering->fullScreen);
-		const bool borderless = configHandler->GetBool("WindowBorderless");
-		if (globalRendering->fullScreen) {
-			SDL_SetWindowSize(globalRendering->window, res.x, res.y);
-
-			if (borderless) {
-				SDL_SetWindowFullscreen(globalRendering->window, SDL_WINDOW_FULLSCREEN_DESKTOP);
-			} else {
-				SDL_SetWindowFullscreen(globalRendering->window, SDL_WINDOW_FULLSCREEN);
-			}
-		} else {
-			SDL_SetWindowFullscreen(globalRendering->window, 0);
-			SDL_SetWindowBordered(globalRendering->window, borderless ? SDL_FALSE : SDL_TRUE);
-			SDL_SetWindowSize(globalRendering->window, res.x, res.y);
-			SDL_SetWindowPosition(globalRendering->window, configHandler->GetInt("WindowPosX"), configHandler->GetInt("WindowPosY"));
-		}
+		configHandler->Set("Fullscreen", b);
 		return true;
 	}
 };
@@ -1434,6 +1424,27 @@ public:
 		readMap->GetGroundDrawer()->DecreaseDetail();
 		return true;
 	}
+};
+
+
+
+class GroundDetailActionExecutor : public IUnsyncedActionExecutor {
+public:
+	GroundDetailActionExecutor() : IUnsyncedActionExecutor("GroundDetail",
+			"Set the level of ground detail") {}
+
+	bool Execute(const UnsyncedAction& action) const {
+		int detail;
+		if (action.GetArgs().empty()) {
+			LOG_L(L_WARNING, "/%s: missing argument", GetCommand().c_str());
+			return false;
+		}
+		detail = atoi((action.GetArgs()).c_str());
+
+		readMap->GetGroundDrawer()->SetDetail(detail);
+		return true;
+	}
+
 };
 
 
@@ -1816,7 +1827,7 @@ public:
 	bool Execute(const UnsyncedAction& action) const {
 		LOG("[ReloadAction] user exited to menu");
 
-		gameSetup->setupText = "";
+		gu->reloadScript = "";
 		gu->globalReload = true;
 		return true;
 	}
@@ -2037,14 +2048,10 @@ public:
 
 class CtrlPanelActionExecutor : public IUnsyncedActionExecutor {
 public:
-	CtrlPanelActionExecutor() : IUnsyncedActionExecutor("CtrlPanel",
-			"Reloads ctrlpanel.txt") {}
+	CtrlPanelActionExecutor() : IUnsyncedActionExecutor("CtrlPanel", "Reloads GUI config") {}
 
 	bool Execute(const UnsyncedAction& action) const {
-
-		const std::string fileName = action.GetArgs().empty() ? "ctrlpanel.txt" : action.GetArgs();
-		guihandler->ReloadConfigFromFile(fileName);
-		LOG("Reloaded ctrlpanel from file: %s", fileName.c_str());
+		guihandler->ReloadConfigFromFile(action.GetArgs());
 		return true;
 	}
 };
@@ -2286,79 +2293,28 @@ public:
 			" a chat message to LuaUI") {}
 
 	bool Execute(const UnsyncedAction& action) const {
-		if (!guihandler)
+		if (guihandler == nullptr)
 			return false;
 
 		const std::string& command = action.GetArgs();
 
 		if (command == "reload" || command == "enable") {
-			if (luaUI && luaUI->IsRunning()) {
-				// NOTE: causes a SEGV through RunCallIn()
-				LOG_L(L_WARNING, "Can not reload from within LuaUI, yet");
-				return true;
-			}
-			if (luaUI == NULL) {
-				LOG("Loading: \"%s\"", "luaui.lua"); // FIXME duplicate of below
-				CLuaUI::LoadHandler();
-				if (luaUI == NULL) {
-					guihandler->LoadConfig("ctrlpanel.txt");
-					LOG_L(L_WARNING, "Loading failed");
-				}
-			} else {
-				if (command == "enable") {
-					LOG_L(L_WARNING, "LuaUI is already enabled");
-				} else {
-					LOG("Reloading: \"%s\"", "luaui.lua"); // FIXME
-					CLuaUI::FreeHandler();
-					CLuaUI::LoadHandler();
-					if (luaUI == NULL) {
-						guihandler->LoadConfig("ctrlpanel.txt");
-						LOG_L(L_WARNING, "Reloading failed");
-					}
-				}
-			}
-			guihandler->LayoutIcons(false);
+			guihandler->EnableLuaUI(command == "enable");
+			return true;
 		}
-		else if (command == "disable") {
-			if (luaUI && luaUI->IsRunning()) {
-				// NOTE: might cause a SEGV through RunCallIn()
-				LOG_L(L_WARNING, "Can not disable from within LuaUI, yet");
-				return true;
-			}
-			if (luaUI != NULL) {
-				CLuaUI::FreeHandler();
-				LOG("Disabled LuaUI");
-			}
-			guihandler->LayoutIcons(false);
+		if (command == "disable") {
+			guihandler->DisableLuaUI();
+			return true;
 		}
-		else if (luaUI) {
+		if (luaUI != nullptr) {
 			luaUI->GotChatMsg(command, 0);
-		} else {
-			LOG_L(L_DEBUG, "LuaUI is not loaded");
+			return true;
 		}
 
+		LOG_L(L_DEBUG, "LuaUI is not loaded");
 		return true;
 	}
 };
-
-
-
-class LuaModUICtrlActionExecutor : public IUnsyncedActionExecutor {
-public:
-	LuaModUICtrlActionExecutor() : IUnsyncedActionExecutor("LuaModUICtrl",
-			"Allow/Disallow Lua to receive UI control events, like mouse-,"
-			" keyboard- and joystick-events") {}
-
-	bool Execute(const UnsyncedAction& action) const {
-
-		bool modUICtrl = CLuaHandle::GetModUICtrl();
-		InverseOrSetBool(modUICtrl, action.GetArgs());
-		CLuaHandle::SetModUICtrl(modUICtrl);
-		configHandler->Set("LuaModUICtrl", modUICtrl ? 1 : 0);
-		return true;
-	}
-};
-
 
 
 class MiniMapActionExecutor : public IUnsyncedActionExecutor {
@@ -2572,18 +2528,23 @@ public:
 	bool Execute(const UnsyncedAction& action) const {
 		if (!action.GetArgs().empty()) {
 			const vector<string> &args = CSimpleParser::Tokenize(action.GetArgs(), 0);
-			if (args.size() == 1) {
-				const float value = (float)atof(args[0].c_str());
-				unitDrawer->LODScale = value;
+
+			if (args.size() == 2) {
+				const int objType = Clamp(atoi(args[0].c_str()), int(LUAOBJ_UNIT), int(LUAOBJ_FEATURE));
+				const float lodScale = atof(args[1].c_str());
+
+				LuaObjectDrawer::SetLODScale(objType, lodScale);
 			}
-			else if (args.size() == 2) {
-				const float value = (float)atof(args[1].c_str());
+			else if (args.size() == 3) {
+				const int objType = Clamp(atoi(args[1].c_str()), int(LUAOBJ_UNIT), int(LUAOBJ_FEATURE));
+				const float lodScale = atof(args[2].c_str());
+
 				if (args[0] == "shadow") {
-					unitDrawer->LODScaleShadow = value;
+					LuaObjectDrawer::SetLODScaleShadow(objType, lodScale);
 				} else if (args[0] == "reflection") {
-					unitDrawer->LODScaleReflection = value;
+					LuaObjectDrawer::SetLODScaleReflection(objType, lodScale);
 				} else if (args[0] == "refraction") {
-					unitDrawer->LODScaleRefraction = value;
+					LuaObjectDrawer::SetLODScaleRefraction(objType, lodScale);
 				}
 			} else {
 				LOG_L(L_WARNING, "/%s: wrong syntax", GetCommand().c_str());
@@ -2780,7 +2741,7 @@ public:
 			"Save the game state to QuickSave.ssf (BROKEN)") {}
 
 	bool Execute(const UnsyncedAction& action) const {
-		game->SaveGame("Saves/QuickSave.ssf", true);
+		game->SaveGame("Saves/QuickSave.ssf", true, true);
 		return true;
 	}
 };
@@ -2809,17 +2770,33 @@ public:
 /// /save [-y ]<savename>
 class SaveActionExecutor : public IUnsyncedActionExecutor {
 public:
-	SaveActionExecutor() : IUnsyncedActionExecutor("Save",
-			"Save the game state to a specific file (BROKEN)") {}
+	SaveActionExecutor(bool _usecreg) : IUnsyncedActionExecutor((_usecreg ? "Save" : "LuaSave"),
+			"Save the game state to a specific file, add -y to overwrite when file is already present"),
+			usecreg(_usecreg) {}
 
 	bool Execute(const UnsyncedAction& action) const {
-
-		const bool saveOverride = action.GetArgs().find("-y ") == 0;
-		const std::string saveName(action.GetArgs().c_str() + (saveOverride ? 3 : 0));
-		const std::string saveFileName = "Saves/" + saveName + ".ssf";
-		game->SaveGame(saveFileName, saveOverride);
+		const std::vector<std::string>& args = _local_strSpaceTokenize(action.GetArgs());
+		bool overwrite = false;
+		std::string saveFileName;
+		switch (args.size()) {
+			case 2:
+				overwrite = args[1] == "-y";
+				//no break, fall through
+			case 1:
+				saveFileName = "Saves/" + args[0];
+				if (usecreg)
+					saveFileName += ".ssf";
+				else
+					saveFileName += ".slsf";
+				break;
+			default:
+				return false;
+		}
+		game->SaveGame(saveFileName, overwrite, usecreg);
 		return true;
 	}
+private:
+	bool usecreg;
 };
 
 
@@ -3121,6 +3098,7 @@ void UnsyncedGameCommands::AddDefaultActionExecutors() {
 	AddActionExecutor(new FullscreenActionExecutor());
 	AddActionExecutor(new IncreaseViewRadiusActionExecutor());
 	AddActionExecutor(new DecreaseViewRadiusActionExecutor());
+	AddActionExecutor(new GroundDetailActionExecutor());
 	AddActionExecutor(new MoreTreesActionExecutor());
 	AddActionExecutor(new LessTreesActionExecutor());
 	AddActionExecutor(new MoreCloudsActionExecutor());
@@ -3169,7 +3147,6 @@ void UnsyncedGameCommands::AddDefaultActionExecutors() {
 	AddActionExecutor(new ClearMapMarksActionExecutor());
 	AddActionExecutor(new NoLuaDrawActionExecutor());
 	AddActionExecutor(new LuaUIActionExecutor());
-	AddActionExecutor(new LuaModUICtrlActionExecutor());
 	AddActionExecutor(new MiniMapActionExecutor());
 	AddActionExecutor(new GroundDecalsActionExecutor());
 	AddActionExecutor(new MaxParticlesActionExecutor());
@@ -3190,7 +3167,8 @@ void UnsyncedGameCommands::AddDefaultActionExecutors() {
 	AddActionExecutor(new SendActionExecutor());
 	AddActionExecutor(new SaveGameActionExecutor());
 	AddActionExecutor(new DumpStateActionExecutor());
-	AddActionExecutor(new SaveActionExecutor());
+	AddActionExecutor(new SaveActionExecutor(true));
+	AddActionExecutor(new SaveActionExecutor(false));
 	AddActionExecutor(new ReloadGameActionExecutor());
 	AddActionExecutor(new ReloadShadersActionExecutor());
 	AddActionExecutor(new DebugInfoActionExecutor());
@@ -3201,7 +3179,9 @@ void UnsyncedGameCommands::AddDefaultActionExecutors() {
 	AddActionExecutor(new RedirectToSyncedActionExecutor("Desync"));
 #endif
 	AddActionExecutor(new RedirectToSyncedActionExecutor("Resync"));
-	AddActionExecutor(new RedirectToSyncedActionExecutor("Take"));
+	if (modInfo.allowTake) {
+		AddActionExecutor(new RedirectToSyncedActionExecutor("Take"));
+	}
 	AddActionExecutor(new RedirectToSyncedActionExecutor("LuaRules"));
 	AddActionExecutor(new RedirectToSyncedActionExecutor("LuaGaia"));
 	AddActionExecutor(new CommandListActionExecutor());

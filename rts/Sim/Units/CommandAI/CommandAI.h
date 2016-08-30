@@ -7,6 +7,7 @@
 #include <set>
 
 #include "System/Object.h"
+#include "CommandDescription.h"
 #include "CommandQueue.h"
 #include "System/float3.h"
 
@@ -23,8 +24,12 @@ public:
 	CCommandAI(CUnit* owner);
 	CCommandAI();
 	virtual ~CCommandAI();
-	void PostLoad() {}
+
 	void DependentDied(CObject* o);
+
+	static void InitCommandDescriptionCache();
+	static void KillCommandDescriptionCache();
+
 	inline void SetOrderTarget(CUnit* o);
 
 	void SetScriptMaxSpeed(float speed, bool persistent);
@@ -41,7 +46,6 @@ public:
 	virtual int GetDefaultCmd(const CUnit* pointed, const CFeature* feature);
 	virtual void SlowUpdate();
 	virtual void GiveCommandReal(const Command& c, bool fromSynced = true);
-	virtual std::vector<CommandDescription>& GetPossibleCommands();
 	virtual void FinishCommand();
 	void WeaponFired(CWeapon* weapon, const bool searchForNewTarget);
 	virtual void BuggerOff(const float3& pos, float radius) {}
@@ -59,7 +63,7 @@ public:
 	void StopAttackingAllyTeam(int ally);
 
 	bool HasCommand(int cmdID) const;
-	bool HasMoreMoveCommands() const;
+	bool HasMoreMoveCommands(bool skipFirstCmd = true) const;
 
 	int CancelCommands(const Command& c, CCommandQueue& queue, bool& first);
 	/**
@@ -76,6 +80,9 @@ public:
 	std::vector<Command> GetOverlapQueued(const Command& c);
 	std::vector<Command> GetOverlapQueued(const Command& c,
 	                                      CCommandQueue& queue);
+
+	const std::vector<const SCommandDescription*>& GetPossibleCommands() const { return possibleCommands; }
+
 	/**
 	 * @brief Causes this CommandAI to execute the attack order c
 	 */
@@ -85,6 +92,13 @@ public:
 	 * @brief executes the stop command c
 	 */
 	virtual void ExecuteStop(Command& c);
+
+	void UpdateCommandDescription(unsigned int cmdDescIdx, const Command& cmd);
+	void UpdateCommandDescription(unsigned int cmdDescIdx, const SCommandDescription& modCmdDesc);
+	void InsertCommandDescription(unsigned int cmdDescIdx, const SCommandDescription& cmdDesc);
+	bool RemoveCommandDescription(unsigned int cmdDescIdx);
+
+	void UpdateNonQueueingCommands();
 
 	void SetCommandDescParam0(const Command& c);
 	bool ExecuteStateCommand(const Command& c);
@@ -101,13 +115,11 @@ public:
 
 	CWeapon* stockpileWeapon;
 
-	std::vector<CommandDescription> possibleCommands;
-	CCommandQueue commandQue;
-	/**
-	 * commands that will not go into the command queue
-	 * (and therefore not reseting it if given without shift
-	 */
+	std::vector<const SCommandDescription*> possibleCommands;
 	std::set<int> nonQueingCommands;
+
+	CCommandQueue commandQue;
+
 	int lastUserCommand;
 	int selfDCountdown;
 	int lastFinishCommand;
